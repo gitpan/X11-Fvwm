@@ -6,6 +6,6 @@ Fvwm.pm			Base API library
 Fvwm.xs			XS module to convert constants from fvwm.h and module.h
 MANIFEST		Ummm, this file, I think...
 Makefile.PL		MakeMaker code for building
-scripts/PerlWinList
-scripts/PerlTkWL
-t/boot.t
+scripts/PerlWinList.PL  Simple text-based sample
+scripts/PerlTkWL.PL	More advanced window list, uses Tk
+t/boot.t		Test script

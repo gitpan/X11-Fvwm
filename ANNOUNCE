@@ -1,16 +1,16 @@
-Wed Mar 19 12:21:45 MST 1997
+Fri Mar 28 18:24:21 MST 1997
 
-Version 0.1 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
+Version 0.2 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
 CPAN servers over the next few days.
 
-This is an alpha release. Not all planned features are in, not all data
-packet types are yet correctly identified and dissected. The interface
-style andoverall functionality are still subject to drastic change before
-this moves into beta.
+This is the second alpha release. Not all planned features are in, not all
+data packet types are yet correctly identified and dissected. The interface
+style and overall functionality are still subject to drastic change before
+this moves into beta. Changes in this version are list below.
 
-From the README file for 0.1:
+From the README file for 0.2:
 
-X11::Fvwm version 0.1 (alpha 1)
+X11::Fvwm version 0.2 (alpha 2)
 
 WHAT IS IT?
 
@@ -46,3 +46,28 @@ This package is copyright (c) 1997 by Randy Ray (randy@byz.org) and may be
 distributed under terms of the Artistic License used to cover Perl itself.
 See the file Artistic in the distribution of Perl 5.002 or later for details
 of copy and distribution terms. All rights reserved.
+
+From the Changes file for 0.2:
+
+* Changed the invocation of handlers to include a reference to the X11::Fvwm
+  object as the first parameter. Otherwise, handlers have no access to the
+  object unless the object is global or the handler is created as a closure.
+
+* Removed the Tk references in Fvwm.pm, so that X11::Fvwm acts as a base
+  class for the API. Fvwm/Tk.pm (X11::Fvwm::Tk) now is a subclass of X11::Fvwm
+  with the new() and eventLoop() methods overloaded. Also adds one new
+  instance variable and a method to access it by. This should simplify adding
+  other GUI widget sets, such as Xforms.
+
+* Put in some simple default handlers in Fvwm/Defaults.pm (package
+  X11::Fvwm::Defaults), that can be used if they meet the developer's needs.
+  So far, only M_ERROR seems to lend itself to such a default handling.
+
+* X11::Fvwm, X11::Fvwm::Tk, X11::Fvwm::Defaults and PerlTkWL are all -w and -T
+  clean.
+
+* Makefile.PL now handles the demos as *.PL files, which allows them to be
+  extracted by perl itself, which results in an invocation line based on
+  the user's configuration of perl.  Also checks for a usable version of
+  the Tk extension.
+

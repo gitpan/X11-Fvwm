@@ -1,5 +1,32 @@
 Revision history for Perl extension X11::Fvwm.
 
-0.01  Thu Feb 13 19:37:35 1997
+0.1  Thu Feb 13 19:37:35 1997
 	- original version; created by h2xs 1.18
+
+	Released as alpha 1 on Wed Mar 19
+
+0.2  Fri Mar 28 18:14:55 MST 1997
+        - intended to be alpha 2
+
+* Changed the invocation of handlers to include a reference to the X11::Fvwm
+  object as the first parameter. Otherwise, handlers have no access to the
+  object unless the object is global or the handler is created as a closure.
+
+* Removed the Tk references in Fvwm.pm, so that X11::Fvwm acts as a base
+  class for the API. Fvwm/Tk.pm (X11::Fvwm::Tk) now is a subclass of X11::Fvwm
+  with the new() and eventLoop() methods overloaded. Also adds one new
+  instance variable and a method to access it by. This should simplify adding
+  other GUI widget sets, such as Xforms.
+
+* Put in some simple default handlers in Fvwm/Defaults.pm (package
+  X11::Fvwm::Defaults), that can be used if they meet the developer's needs.
+  So far, only M_ERROR seems to lend itself to such a default handling.
+
+* X11::Fvwm, X11::Fvwm::Tk, X11::Fvwm::Defaults and PerlTkWL are all -w and -T
+  clean.
+
+* Makefile.PL now handles the demos as *.PL files, which allows them to be
+  extracted by perl itself, which results in an invocation line based on
+  the user's configuration of perl.  Also checks for a usable version of
+  the Tk extension.
 

@@ -49,7 +49,7 @@ use 5.002;
 
 use strict;
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $AUTOLOAD);
+use vars qw($VERSION $revision @ISA @EXPORT $AUTOLOAD);
 
 use Exporter;
 use DynaLoader;
@@ -147,7 +147,8 @@ use IO::File;
              START_FLAG
             );
 
-$VERSION = '0.1';
+$VERSION = '0.2';
+$revision = sprintf("%d.%02d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/o);
 
 #
 # This AUTOLOAD is intended to facilitate the loading of constants from the XS
@@ -168,6 +169,7 @@ sub AUTOLOAD {
                 croak "Your vendor has not defined X11::Fvwm macro $constname";
         }
     }
+    $val =~ /^/o; $val = $';
     eval "sub $AUTOLOAD { $val }";
     goto &$AUTOLOAD;
 }
@@ -207,6 +209,8 @@ $X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
                            &M_LOWER_WINDOW,      "l3",
                            &M_RAISE_WINDOW,      "l3",
                            &M_DESTROY_WINDOW,    "l3",
+                           &M_WINDOWSHADE,       "l3",
+                           &M_DEWINDOWSHADE,     "l3",
                            &M_FOCUS_CHANGE,      "l5",
                            &M_ICONIFY,           "l7",
                            &M_ICON_LOCATION,     "l7",
@@ -219,6 +223,8 @@ $X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
                            &M_RES_NAME,          "l3a*",
                            &M_ICON_FILE,         "l3a*",
                            &M_DEFAULTICON,       "l3a*",
+
+			   &M_MINI_ICON,         "l6",
 
                            &M_END_WINDOWLIST,    "",
                            &M_ERROR,             "l3a*",
@@ -258,15 +264,7 @@ sub new
     $self->{intsize} = $Config::Config{intsize};
 
     #
-    # A note on the instance parameters:
-    #
-    # I classify them in two categories: those that the user sees and should
-    # know about, and those the the user should neither see nor know about.
-    #
-    # Those that the user should know are all caps, and should have a matching
-    # access/set routine by the same name, all lower-case. Those that should
-    # be private look smalltalk-ish in that they start with a lc, but words
-    # are delinated by a capital letter.
+    # instance parameters:
     #
     $self->{MASK} = (defined $params{MASK}) ? $params{MASK} : 0;
     (my $name = $0) =~ s|.*/||o;
@@ -396,11 +394,14 @@ sub initModule
     $self->{fvwmRcfile} = $fvwmRcfile;
     $self->{argv} = [@argv];
 
+    $outFd =~ /(\d+)/o; $outFd = $1;
+    $inFd =~ /(\d+)/o; $inFd = $1;
     $self->{OFD} = new IO::File ">&$outFd";
     $self->{IFD} = new IO::File "<&$inFd";
     $self->{OFD}->autoflush(1);
     $self->{IFD}->autoflush(1);
 
+    $self->{selectMask} = 0;
     vec($self->{selectMask}, fileno($self->{IFD}), 1) = 1;
 
     $self->{handlerTable} = {};
@@ -554,41 +555,6 @@ sub endModule
 
 ##############################################################################
 #
-#   Sub Name:       dead_pipe
-#
-#   Description:    Check to see if the file descriptor for our input
-#                   channel is still valid. If it isn't, then the running
-#                   fvwm has closed our pipes, probably because of its own
-#                   exit.
-#
-#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
-#                   $self     in      ref       Object of this class
-#
-#   Returns:        Success:    1, the pipe IS dead
-#                   Failure:    0, the pipe is alive, don't do anything rash
-#
-##############################################################################
-sub dead_pipe
-{
-    #
-    # This is currently not called, as the series of select's below are not
-    # correctly indicating that the referenced input FH is no longer valid
-    #
-    my $self = shift;
-
-    my $in = $self->{selectMask};
-    my $out;
-
-    if (! select($out=$in, undef, undef, 0))
-    {
-        select($out=$in, undef, undef, undef);
-    }
-
-    return ($out & $in) ? 0 : 1;
-}
-
-##############################################################################
-#
 #   Sub Name:       eventLoop
 #
 #   Description:    Enter a loop which waits for packets and uses processPacket
@@ -612,57 +578,13 @@ sub eventLoop
 
     $self->initModule unless ($self->{didInit});
 
-    #
-    # First try to register this as a Tk fileevent type. If that fails, then
-    # we don't have Tk available to us.
-    #
-    eval
+    while (1)
     {
-        $top = shift;
-        $top->fileevent($self->{IFD},
-                        readable =>
-                        sub {
-                            unless ($self->processPacket($self->readPacket))
-                            {
-                                if (defined $self->{handlerTable}->{EXIT})
-                                {
-                                    my ($handler, $h_index);
-
-                                    for $h_index (@{$self->{handlerTable}->{EXIT}})
-                                        {
-                                            next unless defined $h_index;
-                                            $handler = $h_index->[0];
-
-                                            &$handler('EXIT', $top);
-                                        }
-                                }
-                                    
-                                $self->endModule;
-                                $top->destroy;
-                            }
-                        });
-        &Tk::MainLoop;
-    };
-    if ($@)
-    {
-        # Tk not available; use our own event loop
-        while (1)
-        {
-            $self->processPacket($self->readPacket) || last;
-        }
-        if (defined $self->{handlerTable}->{EXIT})
-        {
-            my ($handler, $h_index);
-
-            for $h_index (@{$self->{handlerTable}->{EXIT}})
-            {
-                next unless defined $h_index;
-                $handler = $h_index->[0];
-
-                &$handler('EXIT');
-            }
-        }
+        $self->processPacket($self->readPacket) || last;
     }
+    $self->invokeHandler('EXIT');
+
+    1;
 }
 
 ##############################################################################
@@ -731,11 +653,11 @@ sub processPacket
 
                 if ($stop)
                 {
-                    return 0 unless &$handler($type, @args);
+                    return 0 unless &$handler($self, $type, @args);
                 }
                 else
                 {
-                    &$handler($type, @args);
+                    &$handler($self, $type, @args);
                 }
             }
         }
@@ -898,15 +820,15 @@ sub invokeHandler
 
     my ($h_index, $handler, $stop);
 
-    if ($type eq 'EXIT' and
-        defined $self->{handlerTable}->{EXIT})
+    if ($type eq 'EXIT')
     {
+        return 1 unless (defined $self->{handlerTable}->{EXIT});
         for $h_index (@{$self->{handlerTable}->{EXIT}})
         {
             next unless defined $h_index; # Catch those that were deleted
             $handler = $h_index->[0];
 
-            &$handler($type, @args);
+            &$handler($self, $type, @args);
         }
 
         return 1;
@@ -1123,17 +1045,16 @@ X11::Fvwm - Perl extension for the Fvwm2 X11 Window Manager
 The B<X11::Fvwm> package is designed to provide access via Perl 5 to the
 module API of Fvwm 2. This code is based upon Fvwm 2.0.45 beta.
 
-The most common track to interfacing with Fvwm is to create an object of
-the X11::Fvwm class, and use it to create/destroy event handlers, and
-catch and route such events from Fvwm. Event handlers can be tied to
-specific event types, or given masks that include multiple events, for
-which the handler would be passed the data for any of the events it
-accepts.
+The most common track to interfacing with Fvwm is to create an object of the
+B<X11::Fvwm> class, and use it to create/destroy event handlers, and catch and
+route such events from Fvwm. Event handlers can be tied to specific event
+types, or given masks that include multiple events, for which the handler
+would be passed the data for any of the events it accepts.
 
 =head1 Exported constants
 
-The following constants are exported automatically by B<X11::Fvwm>. Most of
-these are defined either in the I<modules.tex> file that is part of the
+The following constants are exported automatically by B<X11::Fvwm>. Most
+of these are defined either in the I<modules.tex> file that is part of the
 B<docs/> directory in the fvwm distribution, or within the code itself
 (particularly the files C<fvwm.h> and C<module.h> in the actual source
 directory):
@@ -1226,7 +1147,7 @@ directory):
     P_STRIP_NEWLINES
     START_FLAG
 
-See L<"CONSTANTS AND FLAGS"> below for short definitions of these.
+See L</CONSTANTS AND FLAGS> below for short definitions of these.
 
 =head1 METHODS
 
@@ -1301,7 +1222,7 @@ Takes the I<Fvwm>-related items out of the arguments list and leaves any
 remaining arguments in an instance variable called C<argv>. The read and
 write pipes are recorded for use by the communication methods, and the
 configuration file, window ID and context are stored on instance variables
-as well (see L<"Instance Variables">).
+as well (see L</Instance Variables>).
 
 B<initModule> takes one optional argument, a packet mask to send after the
 communications pipes are set up. If passed, it will override any value that
@@ -1325,9 +1246,9 @@ user to select a target window.
 $self->readPacket()
 
 Read a data packet from I<Fvwm> via the input handle the module received
-at start-up. Returns the triple I<($len, $packet, $type)>, and also
-stores this on the instance variable C<lastPacket>. This call will block
-until there is data available on the pipe to be read.
+at start-up. Returns the triple I<($len, $packet, $type)>, and also stores
+this on the instance variable C<lastPacket>. This call will block until
+there is data available on the pipe to be read.
 
 =item processPacket
 
@@ -1335,11 +1256,11 @@ $self->processPacket($len, $packet, $type)
 
 Breaks down the contents of C<$packet> based on C<$type>. Dispatches all
 packet handlers that accept packets of type C<$type>, passing as arguments
-C<$type> follwed by the contents of the packet itself. If C<$len> is
-C<undef>, then the triple stored in C<lastPacket> is used. If C<$len> is
-equal to -1, then this method immediately returns a value of 0.
+C<$type> follwed by the contents of the packet itself. If C<$len> is C<undef>,
+then the triple stored in C<lastPacket> is used. If C<$len> is equal to -1,
+then this method immediately returns a value of 0.
 
-If the I<stop> flag passed when a handler was created (see L<addHandler>)
+If the I<$stop> flag passed when a handler was created (see B<addHandler>)
 was true, then a false (zero) return value from the handler causes
 B<processPacket> to return 0. Setting the option C<P_LAZY_HANDLERS> causes
 all handlers created to set their I<stop> value to 0.
@@ -1363,7 +1284,7 @@ $new_id = $self->addHandler($mask, $reference)
 
 Add a new handler routine to the internal table, set to be called for any
 packets whose type is included in C<$mask>. The mask argument may contain
-more than one of the known packet types (see L<"Packet Types">), or may be
+more than one of the known packet types (see L</Packet Types>), or may be
 the special string B<EXIT>. All handlers of type B<EXIT> are called
 by B<eventLoop> at termination (or may be explicitly called within signal
 catchers and the like with B<invokeHandler>). Others are called when a
@@ -1380,22 +1301,25 @@ closure). This is the code (or I<callback>, if you prefer) that will be
 executed with the packet contents as arguments. Every handler gets arguments
 of the form:
 
-        ($type, $id, $frameid, $ptr, [, @args])
+        ($self, $type, $id, $frameid, $ptr, [, @args])
 
-where C<$type> is the packet type itself (or B<EXIT>), C<$id> is the
-X Windows window ID of the application main window, C<$frameid> is the X
+where C<$type> is the packet type itself (or B<EXIT>), C<$id> is the X
+Windows window ID of the application main window, C<$frameid> is the X
 window ID of the frame created by I<Fvwm> to house the window decorations,
-and C<$ptr> is an index into the internal database that I<Fvwm> maintains
-for all managed windows. If the packet, by definition, has additional
-arguments, these follow after the initial four, in the order described by
-the module API documentation packaged with I<Fvwm>. All packets, however,
-contain at least these three initial values (the C<$type> argument is
-provided by B<processPacket> for the sake of handlers written to manage
-multiple packet types).
+and C<$ptr> is an index into the internal database that I<Fvwm> maintains for
+all managed windows. C<$self> is the reference to the B<X11::Fvwm> object
+that invoked the B<addHandler> method, allowing the routine access to the
+instance variables.
+If the packet, by definition, has additional arguments,
+these follow after the initial four, in the order described by the module
+API documentation packaged with I<Fvwm>. All packets, however, contain
+at least these three initial values (the C<$type> argument is provided
+by B<processPacket> for the sake of handlers written to manage multiple
+packet types).
 
 The C<$ptr> argument is guaranteed to be unique for all windows currently
-managed. It can prove useful as an index itself (see the
-B<PerlTkWL> sample application, which uses this value in such a way).
+managed. It can prove useful as an index itself (see the B<PerlTkWL> sample
+application, which uses this value in such a way).
 
 The B<addHandler> method does not allow or support symbolic references to
 subroutines.
@@ -1481,19 +1405,7 @@ be referenced for further information.
 
 $self->eventLoop($top)
 
-This method operates in one of two fashions:
-
-If the B<Tk> extension has been loaded, then B<eventLoop> binds the input
-pipe of the object to the B<fileevent> method of B<Tk>. The binding causes
-B<readPacket> and B<processPacket> to be called whenever pending data is
-detected on the input pipe. If and when B<processPacket> returns a false
-(zero) value, any EXIT handlers are invoked and the top-level window is
-destroyed. It is for this usage of B<eventLoop> that the C<$top> argument
-must be specfied, and C<$top> must be an object of a B<Tk> class that has
-access to the method B<fileevent> (preferable a I<MainWindow>, I<TopLevel>
-or I<Frame>).
-
-In the absence of B<Tk>, and endless loop is entered in which
+An endless loop is entered in which
 B<readPacket> and B<processPacket> are called. When B<processPacket> indicates
 a completion (by an exit code of zero), any EXIT handlers are called and the
 module exits.
@@ -1585,25 +1497,21 @@ the header files, so should be portable across platforms:
 =head2 Packet Types
 
 Most of the packets have the same first three parameters as explained in the
-definition of the B<addHandler> method. For this section, assume that
-C<$id>, C<$frameid> and C<$ptr> have the same meaning as defined there.
-Much of this text is based on the file F<modules.tex> in the I<Fvwm>
-distribution.
+definition of the B<addHandler> method. For this section, assume that C<$id>,
+C<$frameid> and C<$ptr> have the same meaning as defined there.  Much of
+this text is based on the file F<modules.tex> in the I<Fvwm> distribution.
 
 =over 8
 
 =item M_ADD_WINDOW
 
-This packet is essentially identical to B<M_CONFIGURE_WINDOW> below,
-differing only in that
-B<M_ADD_WINDOW> is sent once, when the window is created, and the
-B<M_CONFIGURE_WINDOW> packet is sent when the
-viewport on the current desktop changes, or when the size or location
-of the window is changed.
-They contain 24 values. The first 3 identify the window, and
-the next twelve identify the location and size, as described in the
-list below. The flags field is an bitwise OR of the
-flags defined below in L<"Flags">:
+This packet is essentially identical to B<M_CONFIGURE_WINDOW> below, differing
+only in that B<M_ADD_WINDOW> is sent once, when the window is created, and
+the B<M_CONFIGURE_WINDOW> packet is sent when the viewport on the current
+desktop changes, or when the size or location of the window is changed.
+They contain 24 values. The first 3 identify the window, and the next twelve
+identify the location and size, as described in the list below. The flags
+field is an bitwise OR of the flags defined below in L</Flags>:
 
         Arg #        Usage
         
@@ -1638,13 +1546,13 @@ Same structure and contents as B<M_ADD_WINDOW>.
 
 =item M_CONFIG_INFO
 
-I<Fvwm> records all configuration commands that it encounters which
-begins with the character "B<*>". When the built-in command
-B<Send_ConfigInfo> is invoked by a module, this entire list is
-transmitted to the module in packets (one line per packet) of this
-type. The packet consists of three zeros, followed by a variable
-length character string. In addition, the B<PixmapPath>, B<IconPath>,
-B<ColorLimit> and B<ClickTime> parameters are sent to the module.
+I<Fvwm> records all configuration commands that it encounters which begins
+with the character "B<*>". When the built-in command B<Send_ConfigInfo>
+is invoked by a module, this entire list is transmitted to the module in
+packets (one line per packet) of this type. The packet consists of three
+zeros, followed by a variable length character string. In addition, the
+B<PixmapPath>, B<IconPath>, B<ColorLimit> and B<ClickTime> parameters are
+sent to the module.
 
 =item M_DEFAULTICON
 
@@ -1664,7 +1572,8 @@ is no longer on the display.
 
 =item M_DEWINDOWSHADE
 
-Not yet documented.
+The three default arguments identify a window that was just unshaded
+(applicable only if window-shading was enabled in the configuration).
 
 =item M_END_CONFIG_INFO
 
@@ -1674,18 +1583,17 @@ information. This packet contains no values.
 
 =item M_END_WINDOWLIST
 
-This packet is sent to mark the end
-of transmission in response to a B<Send_WindowList> request. A module
-which requests B<Send_WindowList>, then processes all packets received
-between the request and the B<M_END_WINDOWLIST> will have a snapshot of
-the status of the desktop.
+This packet is sent to mark the end of transmission in response to a
+B<Send_WindowList> request. A module which requests B<Send_WindowList>, then
+processes all packets received between the request and the B<M_END_WINDOWLIST>
+will have a snapshot of the status of the desktop.
 
 =item M_ERROR
 
-When fvwm has an error message to report, it is echoed to the modules
-in a packet of this type. This packet has 3 values, all zero, followed
-by a variable length string which contains the error message. It does not
-have the standard first three values.
+When fvwm has an error message to report, it is echoed to the modules in
+a packet of this type. This packet has 3 values, all zero, followed by a
+variable length string which contains the error message. It does not have
+the standard first three values.
 
 =item M_FOCUS_CHANGE
 
@@ -1698,17 +1606,16 @@ the X window ID, is set. The rest will be zeros.
 
 =item M_ICONIFY
 
-This packets contain 7 values. The first 3 are the usual identifiers,
-and the next four describe the location and size of the icon window,
-as described below. Note that B<M_ICONIFY> packets will be sent
-whenever a window is first iconified, or when the icon window is changed
-via the B<XA_WM_HINTS> in a property notify event. An B<M_ICON_LOCATION>
-packet will be sent when the icon is moved.
-If a window which has transients is
-iconified, then an B<M_ICONIFY> packet is sent for each transient
-window, with the X, Y, width, and height fields set to 0. This packet
-will be sent even if the transients were already iconified. Note that
-no icons are actually generated for the transients in this case.
+This packets contain 7 values. The first 3 are the usual identifiers, and the
+next four describe the location and size of the icon window, as described
+below. Note that B<M_ICONIFY> packets will be sent whenever a window is
+first iconified, or when the icon window is changed via the B<XA_WM_HINTS>
+in a property notify event. An B<M_ICON_LOCATION> packet will be sent when
+the icon is moved.  If a window which has transients is iconified, then an
+B<M_ICONIFY> packet is sent for each transient window, with the X, Y, width,
+and height fields set to 0. This packet will be sent even if the transients
+were already iconified. Note that no icons are actually generated for the
+transients in this case.
 
         Arg #        Usage
         
@@ -1728,16 +1635,14 @@ packet is sent only to identify the icon used by the module itself.
 
 =item M_ICON_LOCATION
 
-Similar to the B<M_ICONIFY> packet described earlier, this packet has the
-same arguments in the same order. It is sent whenever the associated icon
-is moved.
+Similar to the B<M_ICONIFY> packet described earlier, this packet has the same
+arguments in the same order. It is sent whenever the associated icon is moved.
 
 =item M_ICON_NAME
 
-This packet is like the B<M_RES_CLASS> and B<M_RES_NAME>
-packets. It contains the usual three window
-identifiers, followed by a variable length character string that is the
-icon name.
+This packet is like the B<M_RES_CLASS> and B<M_RES_NAME> packets. It contains
+the usual three window identifiers, followed by a variable length character
+string that is the icon name.
 
 =item M_LOWER_WINDOW
 
@@ -1746,10 +1651,9 @@ bottom of the stacking order.
 
 =item M_MAP
 
-Contains the standard 3 values.
-The packets are sent when a window is mapped, if it is
-not being deiconified. This is useful to determine when a window is
-finally mapped, after being added.
+Contains the standard 3 values.  The packets are sent when a window is
+mapped, if it is not being deiconified. This is useful to determine when
+a window is finally mapped, after being added.
 
 =item M_MINI_ICON
 
@@ -1757,19 +1661,19 @@ Not yet documented.
 
 =item M_NEW_DESK
 
-This packet type does not have the usual three leading arguments.
-The body of this packet consists of a single long integer, whose value
-is the number of the currently active desktop. This packet is
-transmitted whenever the desktop number is changed.
+This packet type does not have the usual three leading arguments.  The body
+of this packet consists of a single long integer, whose value is the number
+of the currently active desktop. This packet is transmitted whenever the
+desktop number is changed.
 
 =item M_NEW_PAGE
 
-These packets also differ from the standard in not having the usual first three
-arguments. Instead, they contain 5 integers. The first two are the X and Y
-coordinates of the upper left corner of the current viewport on the
-virtual desktop. The third value is the number of the current desktop.
-The fourth and fifth values are the maximum allowed values of the
-coordinates of the upper-left hand corner of the viewport.
+These packets also differ from the standard in not having the usual first
+three arguments. Instead, they contain 5 integers. The first two are the
+X and Y coordinates of the upper left corner of the current viewport on
+the virtual desktop. The third value is the number of the current desktop.
+The fourth and fifth values are the maximum allowed values of the coordinates
+of the upper-left hand corner of the viewport.
 
 =item M_RAISE_WINDOW
 
@@ -1800,7 +1704,8 @@ the name pattern from a B<SendToModule> command.
 
 =item M_WINDOWSHADE
 
-Not yet documented.
+The three default arguments identify a window that was just shaded (applicable
+only if window-shading was enabled in the configuration).
 
 =item M_WINDOW_NAME
 
@@ -1944,10 +1849,10 @@ A mask that matches any of the B<C_R[12345]> context flags.
 These are the flags, from the file F<fvwm.h>, that are packed into the
 I<FLAGS> value of B<M_ADD_WINDOW> and B<M_CONFIGURE_WINDOW> packets.
 Unlike the other constants and flags used by the B<X11::Fvwm> module, these
-have slightly different names than their native I<Fvwm> counterparts. This is
-because the values in F<fvwm.h> have no distinct prefix, such as B<C_> or
-B<M_>. So as to reduce the risk of name conflict, all of these flags were
-given a prefix of B<F_>.
+have slightly different names than their native I<Fvwm> counterparts. This
+is because the values in F<fvwm.h> have no distinct prefix, such as B<C_>
+or B<M_>. So as to reduce the risk of name conflict, all of these flags
+were given a prefix of B<F_>.
 
 =over 8
 
@@ -1965,23 +1870,23 @@ This window has a border drawn with it.
 
 =item F_CirculateSkip
 
-Not documented yet.
+This window has the I<CirculateSkip> style property set.
 
 =item F_CirculateSkipIcon
 
-Not documented yet.
+This window has the I<CirculateSkipIcon> style property set.
 
 =item F_ClickToFocus
 
-Not documented yet.
+Whether the window focus style is I<ClickToFocus>.
 
 =item F_DoesWmTakeFocus
 
-Not documented yet.
+Whether the C<_XA_WM_TAKE_FOCUS> property is set on the window.
 
 =item F_DoesWmDeleteWindow
 
-Not documented yet.
+Whether the C<_XA_WM_DELETE_WINDOW> property is set on the window.
 
 =item F_HintOverride
 
@@ -2141,14 +2046,6 @@ A simple window-listing program that demonstrates simple module/Fvwm
 communication, without a lot of features to clutter up the source code.
 Outputs to C</dev/console>.
 
-=item PerlTkWL
-
-A much more robust WinList clone, it looks and acts very much like the
-FvwmWinList module that comes with Fvwm. It differs in some subtle ways,
-however. This one handles more packet types, as well as demonstrating
-the interaction between X11::Fvwm and the Tk extension. Requires Tk 400.200
-or better.
-
 =back
 
 =head1 BUGS
@@ -2169,10 +2066,12 @@ Randy J. Ray <randy@byz.org>
 
 =head1 ADDITIONAL CREDITS
 
-Considerable text used in defining the packet types was taken from or
-based heavily upon the F<modules.tex> file written by Robert J. Nation,
-which is distributed with I<Fvwm>.
+Considerable text used in defining the packet types was taken from or based
+heavily upon the F<modules.tex> file written by Robert J. Nation, which is
+distributed with I<Fvwm>.
 
 =head1 SEE ALSO
 
-L<fvwm>
+For more information, see L<fvwm> and L<X11::Fvwm::Tk>
+
+=cut

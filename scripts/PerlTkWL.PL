@@ -1,4 +1,41 @@
-#!/usr/bin/perl
+#!/usr/local/bin/perl
+
+use Config;
+use File::Basename qw(&basename &dirname);
+
+# List explicitly here the variables you want Configure to
+# generate.  Metaconfig only looks for shell variables, so you
+# have to mention them as if they were shell variables, not
+# %Config entries.  Thus you write
+#  $startperl
+# to ensure Configure will look for $Config{startperl}.
+
+# This forces PL files to create target in same directory as PL file.
+# This is so that make depend always knows where to find PL derivatives.
+chdir(dirname($0));
+($file = basename($0)) =~ s/\.PL$//;
+$file =~ s/\.pl$//
+	if ($Config{'osname'} eq 'VMS' or
+	    $Config{'osname'} eq 'OS2');  # "case-forgiving"
+
+open OUT,">$file" or die "Can't create $file: $!";
+
+print "Extracting $file (with variable substitutions)\n";
+
+# In this section, perl variables will be expanded during extraction.
+# You can use $Config{...} to use Configure variables.
+
+print OUT <<"!GROK!THIS!";
+$Config{'startperl'}
+    eval 'exec perl -S \$0 "\$@"'
+	if 0;
+!GROK!THIS!
+
+# In the following, perl variables are not expanded during extraction.
+
+print OUT <<'!NO!SUBS!';
+    eval 'exec perl -S $0 "$@"'
+        if 0;
 
 #
 # A spiffier WinList written in perl using the Tk extension
@@ -15,24 +52,26 @@ use Carp;
 use IO::File;
 
 use Tk;
-use X11::Fvwm;
+use X11::Fvwm::Tk;
+use X11::Fvwm::Defaults 'TkFvwmError';
 
 $TOP = new MainWindow;
-my $mod = new X11::Fvwm INIT => 1,     # Go ahead and run initModule
-                        CONFIG => 1,   # Go ahead and get config info
-                        # The mask we will use: all the packets that we
-                        # expect to care about
-                        MASK => (M_ADD_WINDOW |
-                                 M_DESTROY_WINDOW |
-                                 M_ICONIFY |
-                                 M_DEICONIFY |
-                                 M_FOCUS_CHANGE |
-                                 M_WINDOW_NAME |
-                                 M_ICON_NAME |
-                                 M_RES_CLASS |
-                                 M_RES_NAME |
-                                 M_CONFIGURE_WINDOW |
-                                 M_ERROR);
+my $mod = new X11::Fvwm::Tk $TOP,
+                            INIT => 1,     # Go ahead and run initModule
+                            CONFIG => 1,   # Go ahead and get config info
+                            # The mask we will use: all the packets that we
+                            # expect to care about
+                            MASK => (M_ADD_WINDOW |
+                                     M_DESTROY_WINDOW |
+                                     M_ICONIFY |
+                                     M_DEICONIFY |
+                                     M_FOCUS_CHANGE |
+                                     M_WINDOW_NAME |
+                                     M_ICON_NAME |
+                                     M_RES_CLASS |
+                                     M_RES_NAME |
+                                     M_CONFIGURE_WINDOW |
+                                     M_ERROR);
 &ReadFvwmOptions($mod, $TOP);
 
 $frame = $TOP->Frame;
@@ -42,12 +81,11 @@ $frame = $TOP->Frame;
 #
 $TITLE = $OPTS{Title} || 'PerlTkWL - WinList in pTk';
 $TOP->title($TITLE);
-$TOP->configure(-anchor => $OPTS{Anchor});
 $TOP->transient($TOP) if (defined $mod->{argv}->[0] and
                           $mod->{argv}->[0] eq 'Transient');
-# $TOP->geometry($OPTS{Geometry}) if (defined $OPTS{Geometry} and
-#                                   $OPTS{Geometry} =~ /^([+-]\d+){2}$/o);
-$TOP->bind('<KeyPress-q>', sub { &ExitGracefully($TOP, $mod) });
+$TOP->geometry($OPTS{Geometry}) if (defined $OPTS{Geometry} and
+                                    $OPTS{Geometry} =~ /^([+-]\d+){2}$/o);
+$TOP->bind('<KeyPress-q>', sub { &ExitGracefully($mod) });
 
 $CURRENT_FOCUS = undef;
 
@@ -66,26 +104,13 @@ $frame->pack;
 #
 # Now define our event handlers. Where possible, use closures
 #
-$mod->addHandler(M_ERROR,
-                 sub {
-                     my ($type, $id, $frameid, $ptr, $error) = @_;
-
-                     my $err = $TOP->Dialog(-title => 'FVWM Error',
-                                            -bitmap => 'error',
-                                            -default_button => 'Dismiss',
-                                            -text => $error,
-                                            -font => 'fixed',
-                                            -foreground => $OPTS{fg},
-                                            -background => $OPTS{bg},
-                                            -buttons => ['Dismiss', 'Exit']);
-                     my $btn = $err->Show(-global);
-
-                     return ($btn eq 'Exit') ? 0 : 1;
-                 });
+# This one uses a generic handler from the Defaults package:
+#
+$mod->addHandler(M_ERROR, \&TkFvwmError);
 
 $mod->addHandler(M_ICONIFY | M_DEICONIFY,
                  sub {
-                     my ($type, $id, $frameid, $ptr) = @_;
+                     my ($self, $type, $id, $frameid, $ptr) = @_;
 
                      if ($type == M_ICONIFY)
                      {
@@ -117,7 +142,7 @@ $mod->addHandler(M_ICONIFY | M_DEICONIFY,
 
 $mod->addHandler(M_DESTROY_WINDOW,
                  sub {
-                     my ($type, $id, $frameid, $ptr) = @_;
+                     my ($self, $type, $id, $frameid, $ptr) = @_;
 
                      if (defined $winlist{$ptr}->{FRAME})
                      {
@@ -134,7 +159,7 @@ $mod->addHandler(M_DESTROY_WINDOW,
 
 $mod->addHandler(M_ICON_NAME | M_WINDOW_NAME | M_RES_CLASS | M_RES_NAME,
                  sub {
-                     my ($type, $id, $frameid, $ptr, $name) = @_;
+                     my ($self, $type, $id, $frameid, $ptr, $name) = @_;
 
                      unless (exists $winlist{$ptr})
                      {
@@ -159,7 +184,7 @@ $mod->addHandler(M_ICON_NAME | M_WINDOW_NAME | M_RES_CLASS | M_RES_NAME,
                          $winlist{$ptr}->{RESNAME} = $name;
                      }
 
-                     &MakeButton($ptr, $mod, $frame);
+                     &MakeButton($ptr, $self, $frame);
                      &RefreshWinList;
 
                      $ptr;
@@ -167,7 +192,7 @@ $mod->addHandler(M_ICON_NAME | M_WINDOW_NAME | M_RES_CLASS | M_RES_NAME,
 
 $mod->addHandler(M_CONFIGURE_WINDOW,
                  sub {
-                     my ($type, $id, $frameid, $ptr, @args) = @_;
+                     my ($self, $type, $id, $frameid, $ptr, @args) = @_;
 
                      unless (exists $winlist{$ptr})
                      {
@@ -182,14 +207,14 @@ $mod->addHandler(M_CONFIGURE_WINDOW,
                      $winlist{$ptr}->{DESK}   = $args[4];
                      $winlist{$ptr}->{FLAGS}  = $args[5];
 
-                     &MakeButton($ptr, $mod, $frame) && &RefreshWinList;
+                     &MakeButton($ptr, $self, $frame) && &RefreshWinList;
 
                      $ptr;
                  });
 
 $mod->addHandler(M_FOCUS_CHANGE,
                  sub {
-                     my ($type, $id, $frameid, $ix) = @_;
+                     my ($self, $type, $id, $frameid, $ix) = @_;
 
                      if (defined $CURRENT_FOCUS)
                      {
@@ -213,7 +238,7 @@ $mod->addHandler(M_FOCUS_CHANGE,
 #
 $SIG{PIPE} = sub { exit };
 
-$mod->eventLoop($TOP); # Never returns
+$mod->eventLoop; # Never returns
 
 exit;
 
@@ -258,9 +283,6 @@ sub ReadFvwmOptions
     $OPTS{iconfg} = $OPTS{IconForeground} || undef;
     $OPTS{iconbg} = $OPTS{IconBackground} || $OPTS{bg};
 
-    $OPTS{Anchor} = (defined $OPTS{Anchor} and
-                     $OPTS{Anchor} =~ /(n|s|e|w|ne|nw|se|sw|center)/oi) ?
-                         lc $1 : 'nw';
     $OPTS{UseSkipList} = (defined $OPTS{UseSkipList} and
                           $OPTS{UseSkipList} =~ /no|false|0/oi) ? 0 : 1;
     $OPTS{'sort'}  = lc $OPTS{SortStyle} || 'alpha';
@@ -296,14 +318,11 @@ sub ReadFvwmOptions
     #
     # Parlay some of these values into X options
     #
-    $top->optionAdd('*Button.foreground' => $OPTS{fg});
-    $top->optionAdd('*Button.background' => $OPTS{bg});
+    $top->optionAdd('*foreground' => $OPTS{fg});
+    $top->optionAdd('*background' => $OPTS{bg});
     $top->optionAdd('*Button.activeforeground' => $OPTS{afg});
     $top->optionAdd('*Button.activebackground' => $OPTS{abg});
-    $top->optionAdd('*Button.font' => $OPTS{Font});
-    $top->optionAdd('*Label.foreground' => $OPTS{fg});
-    $top->optionAdd('*Label.background' => $OPTS{bg});
-    $top->optionAdd('*Label.font' => $OPTS{Font});
+    $top->optionAdd('*font' => $OPTS{Font});
 
     1;
 }
@@ -490,7 +509,9 @@ sub RefreshWinList
         my $diff = 0;
         for my $ix (scalar @current_ordering)
         {
-            $diff++ unless ("$current_ordering[$ix]" eq "$last_ordering[$ix]");
+            $diff++ if ((! defined $last_ordering[$ix] or
+                         ! defined $current_ordering[$ix]) or
+                        ("$current_ordering[$ix]" ne "$last_ordering[$ix]"));
         }
         return 1 unless ($diff || (defined $force and $force));
     }
@@ -627,7 +648,21 @@ sub ButtonClick
         $action = ('Focus,Iconify -1,Focus', 'Iconify', 'Nop')[$b - 1];
     }
 
-    $mod->sendInfo($winlist{$ix}->{WINID}, $action);
+    if ($action =~ /^\&(.*)$/o)
+    {
+        no strict 'refs';
+
+        &{"$1"}($b, $ix, $top, $mod);
+    }
+    else
+    {
+        $mod->sendInfo($winlist{$ix}->{WINID}, $action);
+    }
+
+    &ExitGracefully($mod) if (defined $mod->{argv}->[0] and
+                              $mod->{argv}->[0] =~ /transient/oi);
+
+    1;
 }
 
 ##############################################################################
@@ -1160,8 +1195,9 @@ sub SetIconColors
 #
 sub ExitGracefully
 {
-    my ($top, $mod) = @_;
+    my $mod = shift;
 
+    my $top = $mod->{topLevel};
     $mod->invokeHandler('EXIT');
     $top->destroy;
     $mod->endModule;
@@ -1285,13 +1321,6 @@ are taken from the various commands available from fvwm, documented in that
 manual page (see L<fvwm>). Multiple commands can be specified as a
 comma-separated list.
 
-=item *PerlTkWLAnchor
-
-Specify how the application should be anchored, which affects the directions
-in which it will grow when growth is needed (and will affect shrinking as
-well). Defaults to "nw", meaning that the window will grow downward and to
-the right, and will shrink upward and to the left.
-
 =item *PerlTkWLSortStyle
 
 Define the criteria by which the list is sorted. This may include any
@@ -1400,3 +1429,8 @@ module itself. See the I<README> file that was packaged with the distribution.
 =head1 AUTHOR
 
 Randy J. Ray <randy@byz.org>
+!NO!SUBS!
+
+close OUT or die "Can't close $file: $!";
+chmod 0755, $file or die "Can't reset permissions for $file: $!\n";
+exec("$Config{'eunicefix'} $file") if $Config{'eunicefix'} ne ':';
