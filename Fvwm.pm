@@ -38,7 +38,7 @@
 #                   deleteHandler
 #                   clearAllHandlers
 #                   setOptions
-#                   GetConfigInfo
+#                   getConfigInfo
 #
 ##############################################################################
 
@@ -146,8 +146,8 @@ use IO::File;
              START_FLAG
             );
 
-$VERSION = '0.3';
-$revision = sprintf("%d.%02d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = '0.4';
+$revision = sprintf("%d.%02d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/o);
 
 #
 # This AUTOLOAD is intended to facilitate the loading of constants from the XS
@@ -182,9 +182,8 @@ bootstrap X11::Fvwm $VERSION;
 # Subroutine-style constant defs.
 #
 sub P_LAZY_HANDLERS  { 1 }
-sub P_PACKET_PASSALL { 2 }
-sub P_STRIP_NEWLINES { 4 }
-sub P_ALL_OPTIONS    { P_LAZY_HANDLERS | P_PACKET_PASSALL | P_STRIP_NEWLINES }
+sub P_STRIP_NEWLINES { 2 }
+sub P_ALL_OPTIONS    { P_LAZY_HANDLERS | P_STRIP_NEWLINES }
 
 ########################################################################
 #
@@ -194,10 +193,10 @@ sub P_ALL_OPTIONS    { P_LAZY_HANDLERS | P_PACKET_PASSALL | P_STRIP_NEWLINES }
 # to instance.
 #
 # Defined event types that send textual data in the packet
-$X11::Fvwm::txtTypes = &M_ERROR | &M_CONFIG_INFO | &M_STRING;
-# Defined event types that send variable data
-$X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
-                       &M_RES_NAME    | &M_ICON_FILE | &M_DEFAULTICON;
+$X11::Fvwm::txtTypes = &M_ERROR       | &M_CONFIG_INFO | &M_STRING |
+                       &M_WINDOW_NAME | &M_ICON_NAME   | &M_RES_CLASS |
+                       &M_RES_NAME    | &M_ICON_FILE   | &M_DEFAULTICON |
+                       &M_MINI_ICON;
 # Unpack formats for the various packet types
 %X11::Fvwm::packetTypes = (
                            &M_NEW_PAGE,          "l5",
@@ -221,7 +220,7 @@ $X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
                            &M_RES_NAME,          "l3a*",
                            &M_ICON_FILE,         "l3a*",
                            &M_DEFAULTICON,       "l3a*",
-                           &M_MINI_ICON,         "l6",
+                           &M_MINI_ICON,         "l8a*",
 
                            &M_END_WINDOWLIST,    "",
                            &M_ERROR,             "l3a*",
@@ -613,14 +612,8 @@ sub processPacket
     # byte (or newline)
     if ($type & $X11::Fvwm::txtTypes)
     {
-        my $nlpat = ($self->{OPTIONS} & &P_STRIP_NEWLINES) ? "\n+" : "";
-        $args[3] =~ s/$nlpat\0.*//g;
-        @args = splice(@args, 0, 4)
-            unless ($self->{OPTIONS} & &P_PACKET_PASSALL);
-    }
-    elsif ($type & $X11::Fvwm::varTypes)
-    {
-        $args[3] =~ s/\0.*//g;
+        my $nlpat = ($self->{OPTIONS} & &P_STRIP_NEWLINES) ? "(\n+)?" : "";
+        $args[$#args] =~ s/$nlpat\0.*//g;
     }
 
     #
@@ -694,7 +687,9 @@ sub addHandler
     my ($htype, $handler, $stop) = @_;
     my ($stop_on_fail, $h_index);
 
-    if (defined $handler and ref($handler) eq "CODE")
+    return undef unless (defined $handler);
+
+    if (ref($handler) eq "CODE")
     {
         if (exists $self->{handlerTable}->{$htype})
         {
@@ -812,8 +807,16 @@ sub invokeHandler
         {
             next unless defined $h_index; # Catch those that were deleted
             $handler = $h_index->[0];
+            $stop    = $h_index->[1];
 
-            &$handler($self, $type, @args);
+            if ($stop)
+            {
+                return 0 unless &$handler($self, $type, @args);
+            }
+            else
+            {
+                &$handler($self, $type, @args);
+            }
         }
 
         return 1;
@@ -831,11 +834,11 @@ sub invokeHandler
 
                 if ($stop)
                 {
-                    return 0 unless &$handler($type, @args);
+                    return 0 unless &$handler($self, $type, @args);
                 }
                 else
                 {
-                    &$handler($type, @args);
+                    &$handler($self, $type, @args);
                 }
             }
         }
@@ -1678,7 +1681,8 @@ transients in this case.
 
 This packet has the three standard arguments identifying the window, then
 a text string with the the name of the file used as the icon image. This
-packet is sent only to identify the icon used by the module itself.
+packet is sent only if the window in question uses an icon other than the
+default icon image (see M_DEFAULTICON above).
 
 =item M_ICON_LOCATION
 
@@ -1689,7 +1693,9 @@ arguments in the same order. It is sent whenever the associated icon is moved.
 
 This packet is like the B<M_RES_CLASS> and B<M_RES_NAME> packets. It contains
 the usual three window identifiers, followed by a variable length character
-string that is the icon name.
+string that is the icon name (not to be confused with the name of the icon
+image; this is the name by which the window is identified while in an iconic
+state).
 
 =item M_LOWER_WINDOW
 
@@ -1704,7 +1710,22 @@ a window is finally mapped, after being added.
 
 =item M_MINI_ICON
 
-Not yet documented.
+This packet contains eight numeric values and a string. The first three are
+the typical triple, identifying the window. The full packet looks like:
+
+        Arg #        Usage
+        
+        0            $id
+        1            $frameid
+        2            $ptr
+        3            Width of the mini-icon
+        4            Height of the mini-icon
+        5            Depth (number of bit-planes)
+        6            The X server Pixmap ID of the image
+        7            The X server Pixmap ID of the mask image
+        8            The name of the mini-icon file
+
+This packet is only sent if the window has a mini-icon associated with it.
 
 =item M_NEW_DESK
 
@@ -1726,7 +1747,6 @@ of the upper-left hand corner of the viewport.
 
 The three default arguments identify a window that was just moved to the
 top of the stacking order.
-
 
 =item M_RES_CLASS
 
@@ -2093,6 +2113,11 @@ A simple window-listing program that demonstrates simple module/Fvwm
 communication, without a lot of features to clutter up the source code.
 Outputs to C</dev/console>.
 
+=item PerlDebug
+
+A packet-debug utility that echoes packets to the console or to a specified
+file.
+
 =back
 
 =head1 BUGS
@@ -2107,15 +2132,19 @@ What this means is that there are several areas with which you can hang your
 module or even royally confuse your running I<Fvwm> process. This is due to
 flexibility, not bugs.
 
+The contents of the B<M_WINDOWSHADE>, B<M_DEWINDOWSHADE> and
+B<M_MINI_ICON> packets are
+based on patches submitted by the author. Without these patches, these packets
+do not return a level of information useful to B<X11::Fvwm>.
+Access to the frame ID or the database ID is dependant on these patches.
+As of release 0.4, these patches are available in a sub-directory of the
+B<X11::Fvwm> distribution called "patches", and are assumed to be applied
+against Fvwm 2.0.45.
+
 The B<ColorLimit> parameter that is fetched by getConfigInfo is only
 accessible if you have applied the color-limiting patch to Fvwm 2.0.45.
-The fate of that patch (and others) in future releases of Fvwm remains to
-be seen.
-
-The contents of the B<M_WINDOWSHADE> and B<M_DEWINDOWSHADE> packets is
-based on a patch submitted by the author. Without this patch, these packets
-only return one integer value, the X window ID of the window in question.
-Access to the frame ID or the database ID is dependant on this patch.
+This patch is also supplied in the "patches" sub-directory, for your
+convenience.
 
 =head1 AUTHOR
 

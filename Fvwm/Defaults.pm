@@ -1,6 +1,6 @@
 ##############################################################################
 #
-#   @(#)$Id: Defaults.pm,v 1.2 1997/04/17 18:03:36 rjray Exp $  
+#   @(#)$Id: Defaults.pm,v 1.3 1997/07/06 23:23:33 rjray Exp $  
 #
 #   Description:    This module is to provide some basic default handlers
 #                   for the more common packet types, or those that will
@@ -32,7 +32,7 @@ use X11::Fvwm;
                 TkFvwmError
                );
 
-$VERSION = sprintf("%d.%02d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/o);
 
 1;
 
@@ -93,28 +93,8 @@ sub TkFvwmError
                            -bitmap => 'error',
                            -default_button => 'Dismiss',
                            -text => $args[3],
-                           -buttons => ['Dismiss', 'Stack Trace', 'Exit']);
+                           -buttons => ['Dismiss', 'Exit']);
     my $btn = $err->Show(-global);
-
-    if ($btn eq 'Stack Trace')
-    {
-        #
-        # Show them the current calling stack, wait for the dialog to exit
-        #
-        my (@args, @text);
-        @args = caller(0);
-        push(@text, sprintf("Within %s (%s, line %d):\n",
-                            $args[3], $args[1], $args[2]));
-        push(@text, &Carp::longmess(''));
-        
-        my $stack = $top->Dialog(-title => 'Error - Stack Trace',
-                                 -text => join("\n", @text),
-                                 -wrap => 'none',
-                                 -font => 'fixed',
-                                 -default_button => 'OK',
-                                 -buttons => ['OK']);
-        $stack->Show(-global);
-    }
 
     return ($btn eq 'Exit') ? 0 : 1;
 }

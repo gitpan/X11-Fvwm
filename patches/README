@@ -1,0 +1,6 @@
+These patches are relative to fvwm 2.0.45. They add certain functionality
+that X11::Fvwm either supports (the ColorLimit patch) or relies on (the
+M_WINDOWSHADE and M_MINI_ICON patches). These patches are expected to be in
+the next release of fvwm, but are bundled here until then.
+
+randy

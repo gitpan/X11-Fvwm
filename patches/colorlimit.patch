@@ -1,0 +1,947 @@
+----------------------------------------------------------------------------
+[Prev][Next] [Chronological] [Thread] [Top]
+
+FVWM color limiting version 1.1
+
+----------------------------------------------------------------------------
+
+   * To: fvwm@hpc.uh.edu
+   * Subject: FVWM color limiting version 1.1
+   * From: Dan Espen <dane@bae.bellcore.com>
+   * Date: Mon, 17 Mar 1997 08:35:01 -0500
+
+----------------------------------------------------------------------------
+
+The latest  version of the colorlimit patch  has more colors  and some
+changes to the man page description.
+
+Since I  submitted the original patch,  I took the hsv calculation out
+of pixy and analysed the  colors in my list for  gaps.  I ran thru all
+the rgb  values, 00 thru FF incrementing  by 11 (16x16x16  colors) and
+found all the peaks in the gaps and filled them in.  The original list
+had 41 colors and now I have 61.  The gaps as measured by pixy were up
+in the 1300 range and are now down in the 300 range.
+
+There is a big gap down in the very dark colors that I have ignored.
+
+*** fvwm/fvwm2.man.orig Wed Jan 22 11:13:38 1997
+--- fvwm/fvwm2.man      Sun Mar  9 22:13:13 1997
+***************
+*** 826,831 ****
+--- 826,848 ----
+  destroyed.
+
+
++ .IP "ColorLimit \fIlimit\fP"
++ Specifies a limit  on the colors used in  pixmaps used  by fvwm.  Zero
++ (the   default)  sets no     limit.   Fvwm uses  pixmaps  for  icons,
++ mini-icons, and pixmap borders and titles.  This command limits pixmap
++ colors  to a set  of colors that  starts out with  common colors.  The
++ current  list contains about 60 colors  and  starts with white, black,
++ grey,   green,  blue, red, cyan,  yellow,  and   magenta.  The command
++ "ColorLimit 9" would limit pixmaps to these 9 colors.
++
++ It makes the most sense to put this command at the front of the
++ .fvwm2rc  file.  This   command should  be   before any  menu
++ definitions that contain mini-icons.
++
++ Solid frame and title colors (including shadows and gradients) are not
++ controlled by this command.
++
++
+  .IP "ColormapFocus [FollowsMouse | FollowsFocus]"
+  By default, fvwm installs the colormap of the window that the cursor
+  is in.  If you use ColormapFocus FollowsFocus, then the installed
+*** fvwm/icons.c.orig   Mon Dec 23 17:07:47 1996
+--- fvwm/icons.c        Tue Mar  4 21:01:39 1997
+***************
+*** 593,598 ****
+--- 593,600 ----
+    XpmAttributes xpm_attributes;
+    extern char *PixmapPath;
+    char *path = NULL;
++   XpmImage    my_image;
++   int rc;
+
+    path = findIconFile(tmp_win->icon_bitmap_file, PixmapPath,R_OK);
+    if(path == NULL)return;
+***************
+*** 600,621 ****
+    XGetWindowAttributes(dpy,Scr.Root,&root_attr);
+    xpm_attributes.colormap = root_attr.colormap;
+    xpm_attributes.closeness = 40000; /* Allow for "similar" colors */
+!   xpm_attributes.valuemask = XpmSize | XpmReturnPixels | XpmColormap | XpmCloseness;
+
+!   if(XpmReadFileToPixmap(dpy, Scr.Root, path,
+!                        &tmp_win->iconPixmap,
+!                        &tmp_win->icon_maskPixmap,
+!                        &xpm_attributes) == XpmSuccess)
+!     {
+!       tmp_win->icon_p_width = xpm_attributes.width;
+!       tmp_win->icon_p_height = xpm_attributes.height;
+!       tmp_win->flags |= PIXMAP_OURS;
+!       tmp_win->iconDepth = Scr.d_depth;
+  #ifdef SHAPE
+!       if (ShapesSupported && tmp_win->icon_maskPixmap)
+!       tmp_win->flags |= SHAPED_ICON;
+  #endif
+-     }
+    free(path);
+  #endif /* XPM */
+  }
+--- 602,633 ----
+    XGetWindowAttributes(dpy,Scr.Root,&root_attr);
+    xpm_attributes.colormap = root_attr.colormap;
+    xpm_attributes.closeness = 40000; /* Allow for "similar" colors */
+!   xpm_attributes.valuemask = XpmSize|XpmReturnPixels|XpmColormap|XpmCloseness;
+
+!   rc =XpmReadFileToXpmImage(path, &my_image, NULL);
+!   if (rc != XpmSuccess) {
+!     fvwm_msg(ERR,"GetXPMFile","XpmReadFileToXpmImage failed, pixmap %s, rc %d",
+!            path, rc);
+!     return;
+!   }
+!   color_reduce_pixmap(&my_image,Scr.ColorLimit);
+!   rc = XpmCreatePixmapFromXpmImage(dpy,Scr.Root, &my_image,
+!                                    &tmp_win->iconPixmap,
+!                                    &tmp_win->icon_maskPixmap,
+!                                    &xpm_attributes);
+!   if (rc != XpmSuccess) {
+!     fvwm_msg(ERR,"GetXPMFile",
+!              "XpmCreatePixmapFromXpmImage failed, rc %d\n", rc);
+!     return;
+!   }
+!   tmp_win->icon_p_width = my_image.width;
+!   tmp_win->icon_p_height = my_image.height;
+!   tmp_win->flags |= PIXMAP_OURS;
+!   tmp_win->iconDepth = Scr.d_depth;
+  #ifdef SHAPE
+!   if (ShapesSupported && tmp_win->icon_maskPixmap)
+!     tmp_win->flags |= SHAPED_ICON;
+  #endif
+    free(path);
+  #endif /* XPM */
+  }
+*** fvwm/builtins.c.orig        Wed Jan 22 08:37:28 1997
+--- fvwm/builtins.c     Tue Mar  4 21:01:40 1997
+***************
+*** 2158,2164 ****
+  #else
+                                   NULL,
+  #endif
+!                                  file);
+            if (bf->u.p == NULL)
+            {
+                if(verbose)fvwm_msg(ERR,"ReadButtonFace",
+--- 2158,2164 ----
+  #else
+                                   NULL,
+  #endif
+!                                  file,Scr.ColorLimit);
+            if (bf->u.p == NULL)
+            {
+                if(verbose)fvwm_msg(ERR,"ReadButtonFace",
+***************
+*** 3147,3150 ****
+--- 3147,3164 ----
+    }
+    if (opts) /* should be empty at this point... */
+      free(opts);
++ }
++ void SetColorLimit(XEvent *eventp,Window w,FvwmWindow *tmp_win,
++                    unsigned long context, char *action,int* Module)
++ {
++   long val1;
++   int val1_unit,n;
++
++   n = GetOneArgument(action, &val1, &val1_unit);
++   if(n != 1) {
++     fvwm_msg(ERR,"SetColorLimit","ColorLimit requires 1 argument, found %d",n);
++     return;
++   }
++
++   Scr.ColorLimit = val1;
+  }
+*** fvwm/functions.c.orig       Tue Jan 14 09:06:33 1997
+--- fvwm/functions.c    Tue Mar  4 21:01:40 1997
+***************
+*** 57,62 ****
+--- 57,63 ----
+  #endif
+    {"ClickTime",    SetClick,         F_CLICK,               FUNC_NO_WINDOW},
+    {"Close",        close_function,   F_CLOSE,               FUNC_NEEDS_WINDOW},
++   {"ColorLimit",   SetColorLimit,    F_COLOR_LIMIT,         FUNC_NO_WINDOW},
+    {"ColormapFocus",SetColormapFocus, F_COLORMAP_FOCUS,      FUNC_NO_WINDOW},
+    {"CursorMove",   movecursor,       F_MOVECURSOR,          FUNC_NO_WINDOW},
+    {"Delete",       delete_function,  F_DELETE,              FUNC_NEEDS_WINDOW},
+*** fvwm/misc.h.orig    Mon Dec 23 17:07:47 1996
+--- fvwm/misc.h Tue Mar  4 21:01:40 1997
+***************
+*** 354,359 ****
+--- 354,361 ----
+                unsigned long context, char *action,int *Module);
+  void SetColormapFocus(XEvent *eventp,Window w,FvwmWindow *tmp_win,
+                      unsigned long context, char *action,int* Module);
++ void SetColorLimit(XEvent *eventp,Window w,FvwmWindow *tmp_win,
++                     unsigned long context, char *action,int* Module);
+  FVWM_INLINE void DrawPattern(Window, GC, GC, int, int,int);
+  Pixel    GetShadow(Pixel);
+  Pixel    GetHilite(Pixel);
+*** fvwm/read.c.orig    Wed Jan 15 08:56:17 1997
+--- fvwm/read.c Tue Mar  4 21:01:41 1997
+***************
+*** 319,324 ****
+--- 319,326 ----
+  #ifdef XPM
+    sprintf(message,"PixmapPath %s\n",PixmapPath);
+    SendName(*Module,M_CONFIG_INFO,0,0,0,message);
++   sprintf(message,"ColorLimit %d\n",Scr.ColorLimit);
++   SendName(*Module,M_CONFIG_INFO,0,0,0,message);
+  #endif
+    sprintf(message,"ClickTime %d\n",Scr.ClickTime);
+    SendName(*Module,M_CONFIG_INFO,0,0,0,message);
+*** fvwm/screen.h.orig  Wed Jan 22 08:37:49 1997
+--- fvwm/screen.h       Tue Mar  4 21:01:42 1997
+***************
+*** 311,316 ****
+--- 311,317 ----
+    int OpaqueSize;
+    int CurrentDesk;             /* The current desktop number */
+    int ColormapFocus;           /* colormap focus style */
++   int ColorLimit;              /* Limit on colors used in pixmaps */
+
+    /*
+    ** some additional global options which will probably become window
+*** fvwm/parse.h.orig   Mon Dec 23 17:07:47 1996
+--- fvwm/parse.h        Tue Mar  4 21:01:42 1997
+***************
+*** 101,106 ****
+--- 101,107 ----
+  #define F_DESTROY_DECOR         124
+  #define F_UPDATE_DECOR          125
+  #define F_WINDOW_SHADE          126
++ #define F_COLOR_LIMIT           127
+
+  /* Functions for use by modules only! */
+  #define F_SEND_WINDOW_LIST     1000
+*** fvwm/add_window.c.orig      Wed Jan 22 10:46:54 1997
+--- fvwm/add_window.c   Tue Mar  4 21:01:42 1997
+***************
+*** 541,547 ****
+  #else
+                                           NULL,
+  #endif
+!                                          tmp_win->mini_pixmap_file);
+        }
+        else {
+        tmp_win->mini_icon = NULL;
+--- 541,548 ----
+  #else
+                                           NULL,
+  #endif
+!                                          tmp_win->mini_pixmap_file,
+!                                            Scr.ColorLimit);
+        }
+        else {
+        tmp_win->mini_icon = NULL;
+*** fvwm/menus.c.orig   Mon Jan 20 11:56:11 1997
+--- fvwm/menus.c        Tue Mar  4 21:01:43 1997
+***************
+*** 1145,1153 ****
+
+          /* Next, check for a color pixmap */
+  #ifdef XPM
+!         pp=CachePicture(dpy,Scr.Root,IconPath,PixmapPath,name);
+  #else
+!         pp=CachePicture(dpy,Scr.Root,IconPath,IconPath,name);
+  #endif
+          if(*txt != '\0')txt++;
+          while(*txt != '\0')
+--- 1145,1153 ----
+
+          /* Next, check for a color pixmap */
+  #ifdef XPM
+!         pp=CachePicture(dpy,Scr.Root,IconPath,PixmapPath,name,Scr.ColorLimit);
+  #else
+!         pp=CachePicture(dpy,Scr.Root,IconPath,IconPath,name,Scr.ColorLimit);
+  #endif
+          if(*txt != '\0')txt++;
+          while(*txt != '\0')
+*** libs/Picture.c.orig Thu Dec  5 16:29:35 1996
+--- libs/Picture.c      Sun Mar  9 21:59:08 1997
+***************
+*** 5,10 ****
+--- 5,28 ----
+   *     You may use this code for any purpose, as long as the original
+   *     copyright remains in the source code and all documentation
+   ****************************************************************************/
++ /*
++   Changed 02/12/97 by Dan Espen:
++   - added routines to determine color closeness, for color use reduction.
++   Some of the logic comes from pixy2, so the copyright is below.
++   */
++ /*
++  * $Id: pixy.c,v 3.0.1.1 1996/03/20 12:31:49 deejai!martin Exp $
++  * Copyright 1996, Romano Giannetti. No guarantees or warantees or anything
++  * are provided or implied in any way whatsoever. Use this program at your
++  * own risk. Permission to use this program for any purpose is given,
++  * as long as the copyright is kept intact.
++  *
++  * Romano Giannetti - Dipartimento di Ingegneria dell'Informazione
++  *                    via Diotisalvi, 2  PISA
++  * mailto:romano@iet.unipi.it
++  * http://www.iet.unipi.it/~romano
++  *
++  */
+
+
+  /****************************************************************************
+***************
+*** 30,36 ****
+  #include <X11/Xutil.h>
+
+  #ifdef XPM
+! #include <X11/xpm.h>
+  #endif
+
+  #include "fvwmlib.h"
+--- 48,58 ----
+  #include <X11/Xutil.h>
+
+  #ifdef XPM
+! /* static function prototypes */
+! static void c100_init_base_table ();    /* prototype */
+! static void c200_substitute_color(char **,int); /* prototype */
+! static void c300_color_to_rgb(char *, XColor *); /* prototype */
+! static double c400_distance(XColor *, XColor *); /* prototype */
+  #endif
+
+  #include "fvwmlib.h"
+***************
+*** 38,59 ****
+
+  static Picture *PictureList=NULL;
+  static Colormap PictureCMap;
+
+!
+  void InitPictureCMap(Display *dpy,Window Root)
+  {
+    XWindowAttributes root_attr;
+    XGetWindowAttributes(dpy,Root,&root_attr);
+    PictureCMap=root_attr.colormap;
+  }
+
+
+! Picture *LoadPicture(Display *dpy,Window Root,char *path)
+  {
+    int i,l;
+    Picture *p;
+  #ifdef XPM
+    XpmAttributes xpm_attributes;
+  #endif
+
+    p=(Picture*)safemalloc(sizeof(Picture));
+--- 60,85 ----
+
+  static Picture *PictureList=NULL;
+  static Colormap PictureCMap;
++ static Display *save_dpy;               /* Save area for display pointer */
+
+! /* This routine called during fvwm initialization */
+  void InitPictureCMap(Display *dpy,Window Root)
+  {
+    XWindowAttributes root_attr;
++   save_dpy = dpy;                       /* save for latter */
+    XGetWindowAttributes(dpy,Root,&root_attr);
+    PictureCMap=root_attr.colormap;
+  }
+
+
+! Picture *LoadPicture(Display *dpy,Window Root,char *path, int color_limit)
+  {
+    int i,l;
+    Picture *p;
+  #ifdef XPM
+    XpmAttributes xpm_attributes;
++   int rc;
++   XpmImage    my_image;
+  #endif
+
+    p=(Picture*)safemalloc(sizeof(Picture));
+***************
+*** 68,81 ****
+    xpm_attributes.valuemask=
+      XpmSize | XpmReturnPixels | XpmColormap | XpmCloseness;
+
+!   if(XpmReadFileToPixmap(dpy,Root,path,&p->picture,&p->mask,&xpm_attributes)
+!      == XpmSuccess)
+!     {
+!       p->width = xpm_attributes.width;
+!       p->height = xpm_attributes.height;
+        p->depth = DefaultDepthOfScreen(DefaultScreenOfDisplay(dpy));
+        return p;
+      }
+  #endif
+
+    /* If no XPM support, or XPM loading failed, try bitmap */
+--- 94,112 ----
+    xpm_attributes.valuemask=
+      XpmSize | XpmReturnPixels | XpmColormap | XpmCloseness;
+
+!   rc =XpmReadFileToXpmImage(path, &my_image, NULL);
+!   if (rc == XpmSuccess) {
+!     color_reduce_pixmap(&my_image, color_limit);
+!     rc = XpmCreatePixmapFromXpmImage(dpy, Root, &my_image,
+!                                      &p->picture,&p->mask,
+!                                      &xpm_attributes);
+!     if (rc == XpmSuccess) {
+!       p->width = my_image.width;
+!       p->height = my_image.height;
+        p->depth = DefaultDepthOfScreen(DefaultScreenOfDisplay(dpy));
+        return p;
+      }
++   }
+  #endif
+
+    /* If no XPM support, or XPM loading failed, try bitmap */
+***************
+*** 92,98 ****
+    return NULL;
+  }
+
+!
+  Picture *GetPicture(Display *dpy,Window Root,char *IconPath,char *PixmapPath,
+                    char *name)
+  {
+--- 123,129 ----
+    return NULL;
+  }
+
+! #ifdef NotUsed
+  Picture *GetPicture(Display *dpy,Window Root,char *IconPath,char *PixmapPath,
+                    char *name)
+  {
+***************
+*** 100,111 ****
+    if(!(path=findIconFile(name,PixmapPath,R_OK)))
+      if(!(path=findIconFile(name,IconPath,R_OK)))
+        return NULL;
+!   return LoadPicture(dpy,Root,path);
+  }
+
+-
+  Picture *CachePicture(Display *dpy,Window Root,char *IconPath,char *PixmapPath,
+!                   char *name)
+  {
+    char *path;
+    Picture *p=PictureList;
+--- 131,142 ----
+    if(!(path=findIconFile(name,PixmapPath,R_OK)))
+      if(!(path=findIconFile(name,IconPath,R_OK)))
+        return NULL;
+!   return LoadPicture(dpy,Root,path, color_limit);
+  }
++ #endif
+
+  Picture *CachePicture(Display *dpy,Window Root,char *IconPath,char *PixmapPath,
+!                   char *name, int color_limit)
+  {
+    char *path;
+    Picture *p=PictureList;
+***************
+*** 136,142 ****
+      }
+
+    /* Not previously cached, have to load it ourself. Put it first in list */
+!   p=LoadPicture(dpy,Root,path);
+    if(p)
+      {
+        p->next=PictureList;
+--- 167,173 ----
+      }
+
+    /* Not previously cached, have to load it ourself. Put it first in list */
+!   p=LoadPicture(dpy,Root,path, color_limit);
+    if(p)
+      {
+        p->next=PictureList;
+***************
+*** 249,251 ****
+--- 280,450 ----
+  }
+
+
++ #ifdef XPM
++ /* This structure is used to quickly access the RGB values of the colors */
++ /* without repeatedly having to transform them.   */
++ typedef struct {
++   char * c_color;     /* Pointer to the name of the color */
++   XColor rgb_space;                     /* rgb color info */
++ } Color_Info;
++
++ /* First thing in base array are colors probably already in the color map
++    because they have familiar names.
++    I pasted them into a xpm and spread them out so that similar colors are
++    spread out.
++    Toward the end are some colors to fill in the gaps.
++    Currently 61 colors in this list.
++    */
++ static Color_Info base_array[] = {
++   {"white"},
++   {"black"},
++   {"grey"},
++   {"green"},
++   {"blue"},
++   {"red"},
++   {"cyan"},
++   {"yellow"},
++   {"magenta"},
++   {"DodgerBlue"},
++   {"SteelBlue"},
++   {"chartreuse"},
++   {"wheat"},
++   {"turquoise"},
++   {"CadetBlue"},
++   {"gray87"},
++   {"CornflowerBlue"},
++   {"YellowGreen"},
++   {"NavyBlue"},
++   {"MediumBlue"},
++   {"plum"},
++   {"aquamarine"},
++   {"orchid"},
++   {"ForestGreen"},
++   {"lightyellow"},
++   {"brown"},
++   {"orange"},
++   {"red3"},
++   {"HotPink"},
++   {"LightBlue"},
++   {"gray47"},
++   {"pink"},
++   {"red4"},
++   {"violet"},
++   {"purple"},
++   {"gray63"},
++   {"gray94"},
++   {"plum1"},
++   {"PeachPuff"},
++   {"maroon"},
++   {"lavender"},
++   {"salmon"},                           /* for peachpuff, orange gap */
++   {"blue4"},                            /* for navyblue/mediumblue gap */
++   {"PaleGreen4"},                       /* for forestgreen, yellowgreen gap */
++   {"#AA7700"},                          /* brick, no close named color */
++   {"#11EE88"},                          /* light green, no close named color */
++   {"#884466"},                          /* dark brown, no close named color */
++   {"#CC8888"},                          /* light brick, no close named color */
++   {"#EECC44"},                          /* gold, no close named color */
++   {"#AAAA44"},                          /* dull green, no close named color */
++   {"#FF1188"},                          /* pinkish red */
++   {"#992299"},                          /* purple */
++   {"#CCFFAA"},                          /* light green */
++   {"#664400"},                          /* dark brown*/
++   {"#AADD99"},                          /* light green */
++   {"#66CCFF"},                          /* light blue */
++   {"#CC2299"},                          /* dark red */
++   {"#FF11CC"},                          /* bright pink */
++   {"#11CC99"},                          /* grey/green */
++   {"#AA77AA"},                          /* purple/red */
++   {"#EEBB77"}                           /* orange/yellow */
++ };
++
++ #define NColors (sizeof(base_array) / sizeof(Color_Info))
++
++ /* given an xpm, change colors to colors close to the
++    subset above. */
++ void
++ color_reduce_pixmap(XpmImage *image,int color_limit) {
++   int i;
++   XpmColor *color_table_ptr;
++   static char base_init = 'n';
++   if (color_limit > 0) {                /* If colors to be limited */
++     if (base_init == 'n') {             /* if base table not created yet */
++       c100_init_base_table();           /* init the base table */
++       base_init = 'y';                  /* remember that its set now. */
++     }                                   /* end base table init */
++     color_table_ptr = image->colorTable; /* start of xpm color table */
++     for(i=0; i<image->ncolors; i++) {   /* all colors in the xpm */
++       c200_substitute_color(&color_table_ptr->c_color,
++                             color_limit); /* fix each one */
++       color_table_ptr +=1;              /* counter for loop */
++     }                                   /* end all colors in xpm */
++   }                                     /* end colors limited */
++   return;                               /* return, no rc! */
++ }
++
++ /* from the color names in the base table, calc rgbs */
++ static void
++ c100_init_base_table () {
++   int i;
++   for (i=0; i<NColors; i++) {           /* change all base colors to numbers */
++     c300_color_to_rgb(base_array[i].c_color, &base_array[i].rgb_space);
++   }
++ }
++
++
++ /* Replace the color in my_color by the closest matching color
++    from base_table */
++ void c200_substitute_color(char **my_color, int color_limit) {
++   int i, limit, minind;
++   double mindst=1e20;
++   double dst;
++   XColor rgb;          /* place to calc rgb for each color in xpm */
++
++   if (!strcasecmp(*my_color,"none")) {
++     return ;                        /* do not substitute the "none" color */
++   }
++
++   c300_color_to_rgb(*my_color, &rgb);  /* get rgb for a color in xpm */
++   /* Loop over all base_array colors; find out which one is closest
++      to my_color */
++   minind = 0;                           /* Its going to find something... */
++   limit = NColors;                      /* init to max */
++   if (color_limit < NColors) {          /* can't do more than I have */
++     limit = color_limit;                /* Do reduction using subset */
++   }                                     /* end reducing limit */
++   for(i=0; i < limit; i++) {            /* loop over base array */
++     dst = c400_distance (&rgb, &base_array[i].rgb_space); /* distance */
++     if (dst < mindst ) {              /* less than min and better than last */
++       mindst=dst;                     /* new minimum */
++       minind=i;                       /* save loc of new winner */
++       if (dst <= 100) {               /* if close enough */
++         break;                        /* done */
++       }                               /* end close enough */
++     }                                 /* end new low distance */
++   }                                   /* end all base colors */
++   /* Finally: replace the color string by the newly determined color string */
++   *my_color = base_array[minind].c_color; /* change the color */
++   return;                             /* all done */
++ }
++
++ static void c300_color_to_rgb(char *c_color, XColor *rgb_space) {
++   int rc;
++   rc=XParseColor(save_dpy, PictureCMap, c_color, rgb_space);
++   if (rc==0) {
++     fprintf(stderr,"color_to_rgb: can't parse color %s, rc %d\n", c_color, rc);
++     return;
++   }
++ }
++
++ /* A macro for squaring things */
++ #define SQUARE(X) ((X)*(X))
++ /* RGB Color distance sum of square of differences */
++ double c400_distance(XColor *target_ptr, XColor *base_ptr) {
++   register double dst;
++   dst = SQUARE((double)(base_ptr->red   - target_ptr->red  )/655.35)
++     +   SQUARE((double)(base_ptr->green - target_ptr->green)/655.35)
++     +   SQUARE((double)(base_ptr->blue  - target_ptr->blue )/655.35);
++   return dst;
++ }
++ #endif /* XPM */
+*** libs/fvwmlib.h.orig Tue Jan 14 08:47:39 1997
+--- libs/fvwmlib.h      Tue Mar  4 21:01:43 1997
+***************
+*** 73,83 ****
+  } Picture;
+
+  void InitPictureCMap(Display*,Window);
+  Picture *GetPicture(Display*,Window,char *iconpath,char *pixmappath,char*);
+! Picture *CachePicture(Display*,Window,char *iconpath,char *pixmappath,char*);
+  void DestroyPicture(Display*,Picture*);
+
+  char *findIconFile(char *icon, char *pathlist, int type);
+
+  /***********************************************************************
+   * Wrappers around various X11 routines
+--- 73,91 ----
+  } Picture;
+
+  void InitPictureCMap(Display*,Window);
++ #ifdef NotUsed
+  Picture *GetPicture(Display*,Window,char *iconpath,char *pixmappath,char*);
+! #endif
+! Picture *CachePicture(Display*,Window,char *iconpath,
+!                       char *pixmappath,char*,int);
+  void DestroyPicture(Display*,Picture*);
+
+  char *findIconFile(char *icon, char *pathlist, int type);
++ #ifdef XPM
++ #include <X11/Intrinsic.h>              /* needed for xpm.h */
++ #include <X11/xpm.h>                    /* needed for next prototype */
++ void color_reduce_pixmap(XpmImage *, int);
++ #endif
+
+  /***********************************************************************
+   * Wrappers around various X11 routines
+*** modules/FvwmButtons/FvwmButtons.c.orig      Tue Jan 14 11:30:43 1997
+--- modules/FvwmButtons/FvwmButtons.c   Tue Mar  4 21:01:44 1997
+***************
+*** 133,138 ****
+--- 133,139 ----
+
+  button_info *UberButton=NULL;
+
++ int save_color_limit;                   /* Color limit, if any */
+  /* ------------------------------ Misc functions ----------------------------*/
+
+  #ifdef DEBUG
+***************
+*** 768,774 ****
+  **/
+  int LoadIconFile(char *s,Picture **p)
+  {
+!   *p=CachePicture(Dpy,Root,iconPath,pixmapPath,s);
+    if(*p)
+      return 1;
+    return 0;
+--- 769,775 ----
+  **/
+  int LoadIconFile(char *s,Picture **p)
+  {
+!   *p=CachePicture(Dpy,Root,iconPath,pixmapPath,s, save_color_limit);
+    if(*p)
+      return 1;
+    return 0;
+*** modules/FvwmButtons/parse.c.orig    Thu Jun 27 10:46:22 1996
+--- modules/FvwmButtons/parse.c Tue Mar  4 21:01:44 1997
+***************
+*** 793,798 ****
+--- 793,799 ----
+    fclose(f);
+  }
+
++ extern int save_color_limit;            /* global for xpm color limiting */
+  /**
+  *** ParseOptions()
+  **/
+***************
+*** 799,808 ****
+  void ParseOptions(button_info *ub)
+  {
+    char *s;
+!   char *items[]={"iconpath","pixmappath",NULL,NULL};
+
+!   items[2]=mymalloc(strlen(MyName)+2);
+!   sprintf(items[2],"*%s",MyName);
+
+    GetConfigLine(fd,&s);
+    while(s && s[0])
+--- 800,810 ----
+  void ParseOptions(button_info *ub)
+  {
+    char *s;
+!   char *items[]={"iconpath","pixmappath","colorlimit",NULL,NULL};
+!   int rc;
+
+!   items[3]=mymalloc(strlen(MyName)+2);
+!   sprintf(items[3],"*%s",MyName);
+
+    GetConfigLine(fd,&s);
+    while(s && s[0])
+***************
+*** 817,823 ****
+        case 1:
+          CopyString(&pixmapPath,s);
+          break;
+!       case 2:
+          if(s && s[0] && !config_file)
+            ParseConfigLine(&ub,s);
+        }
+--- 819,828 ----
+        case 1:
+          CopyString(&pixmapPath,s);
+          break;
+!       case 2:                         /* colorlimit */
+!           sscanf(s,"%d",&save_color_limit);
+!         break;
+!       case 3:
+          if(s && s[0] && !config_file)
+            ParseConfigLine(&ub,s);
+        }
+*** modules/FvwmIconBox/icons.c.orig    Sun Feb 18 22:16:12 1996
+--- modules/FvwmIconBox/icons.c Tue Mar  4 21:01:45 1997
+***************
+*** 45,50 ****
+--- 45,52 ----
+  #include <X11/extensions/shape.h>
+  #endif /* SHAPE */
+
++ extern int save_color_limit;
++
+  #define ICON_EVENTS (ExposureMask |\
+  ButtonReleaseMask | ButtonPressMask | EnterWindowMask | LeaveWindowMask)
+
+***************
+*** 235,240 ****
+--- 237,244 ----
+    XWindowAttributes root_attr;
+    XpmAttributes xpm_attributes;
+    char *path = NULL;
++   int rc;
++   XpmImage    my_image;
+
+    path = findIconFile(item->icon_file, pixmapPath,R_OK);
+    if(path == NULL)return;
+***************
+*** 241,257 ****
+
+    XGetWindowAttributes(dpy,Root,&root_attr);
+    xpm_attributes.colormap = root_attr.colormap;
+!   xpm_attributes.closeness = 20000;    /* tight? */
+    xpm_attributes.valuemask = XpmSize|XpmReturnPixels|XpmColormap|XpmCloseness;
+!   if(XpmReadFileToPixmap(dpy, Root, path,
+!                        &item->iconPixmap,
+!                        &item->icon_maskPixmap,
+!                        &xpm_attributes) == XpmSuccess)
+!     {
+!       item->icon_w = min(max_icon_width, xpm_attributes.width);
+!       item->icon_h = min(max_icon_height, xpm_attributes.height);
+!       item->icon_depth = d_depth;
+!     }
+    free(path);
+  #endif /* XPM */
+  }
+--- 245,271 ----
+
+    XGetWindowAttributes(dpy,Root,&root_attr);
+    xpm_attributes.colormap = root_attr.colormap;
+!   xpm_attributes.closeness = 40000;    /* same closeness used elsewhere */
+    xpm_attributes.valuemask = XpmSize|XpmReturnPixels|XpmColormap|XpmCloseness;
+!   rc = XpmReadFileToXpmImage(path, &my_image, NULL);
+!   if (rc != XpmSuccess) {
+!     fprintf(stderr, "Problem reading pixmap %s, rc %d\n", path, rc);
+!     free(path);
+!     return;
+!   }
+!   color_reduce_pixmap(&my_image,save_color_limit);
+!   rc = XpmCreatePixmapFromXpmImage(dpy,Root, &my_image,
+!                                     &item->iconPixmap,
+!                                     &item->icon_maskPixmap,
+!                                     &xpm_attributes);
+!   if (rc != XpmSuccess) {
+!     fprintf(stderr, "Problem creating pixmap from image, rc %d\n", rc);
+!     free(path);
+!     return;
+!   }
+!   item->icon_w = min(max_icon_width, my_image.width);
+!   item->icon_h = min(max_icon_height, my_image.height);
+!   item->icon_depth = d_depth;
+    free(path);
+  #endif /* XPM */
+  }
+***************
+*** 340,349 ****
+    XWindowAttributes root_attr;
+  #ifdef XPM
+    XpmAttributes xpm_attributes;
+  #endif
+    char *path = NULL;
+    Pixmap tmp_bitmap, maskPixmap;
+!   int x, y, w=0, h=0;
+
+    if (IconwinPixmapFile == NULL)
+      return False;
+--- 354,364 ----
+    XWindowAttributes root_attr;
+  #ifdef XPM
+    XpmAttributes xpm_attributes;
++   XpmImage my_image;
+  #endif
+    char *path = NULL;
+    Pixmap tmp_bitmap, maskPixmap;
+!   int x, y, w=0, h=0, rc;
+
+    if (IconwinPixmapFile == NULL)
+      return False;
+***************
+*** 368,380 ****
+      {
+        XGetWindowAttributes(dpy,Root,&root_attr);
+        xpm_attributes.colormap = root_attr.colormap;
+!       xpm_attributes.valuemask = XpmSize|XpmReturnPixels|XpmColormap;
+!       if (XpmReadFileToPixmap(dpy, Root, path, &IconwinPixmap,
+!                             &maskPixmap, &xpm_attributes) ==
+!         XpmSuccess){
+!       w = xpm_attributes.width;
+!       h = xpm_attributes.height;
+        }
+        free(path);
+      }
+  #endif
+--- 383,409 ----
+      {
+        XGetWindowAttributes(dpy,Root,&root_attr);
+        xpm_attributes.colormap = root_attr.colormap;
+!       xpm_attributes.closeness = 40000;    /* same closeness used elsewhere */
+!       xpm_attributes.valuemask = XpmSize|XpmReturnPixels|XpmColormap|
+!         XpmCloseness;
+!       rc = XpmReadFileToXpmImage(path, &my_image, NULL);
+!       if (rc != XpmSuccess) {
+!         fprintf(stderr, "Problem reading pixmap %s, rc %d\n", path, rc);
+!         free(path);
+!         return False;
+        }
++       color_reduce_pixmap(&my_image,save_color_limit);
++       rc = XpmCreatePixmapFromXpmImage(dpy,Root, &my_image,
++                                        &IconwinPixmap,
++                                        &maskPixmap,
++                                        &xpm_attributes);
++       if (rc != XpmSuccess) {
++         fprintf(stderr, "Problem creating pixmap from image, rc %d\n", rc);
++         free(path);
++         return False;
++       }
++       w = my_image.width;
++       h = my_image.height;
+        free(path);
+      }
+  #endif
+*** modules/FvwmIconBox/FvwmIconBox.c.orig      Thu Jan  2 15:19:31 1997
+--- modules/FvwmIconBox/FvwmIconBox.c   Tue Mar  4 21:01:46 1997
+***************
+*** 158,163 ****
+--- 158,165 ----
+  unsigned long local_flags = 0;
+  int sortby = UNSORT;
+
++ int save_color_limit;                   /* color limit from config */
++
+  /************************************************************************
+    Main
+    Based on main() from GoodStuff:
+***************
+*** 208,213 ****
+--- 210,216 ----
+        fprintf(stderr,"%s: Screen %d is not valid ", MyName, screen);
+        exit(1);
+      }
++   InitPictureCMap(dpy,Root); /* store the root cmap */
+    d_depth = DefaultDepth(dpy, screen);
+
+    XSetErrorHandler((XErrorHandler)myErrorHandler);
+***************
+*** 1579,1584 ****
+--- 1582,1590 ----
+          CopyString(&pixmapPath,&tline[10]);
+        else if (mystrncasecmp(tline,"ClickTime",9)==0)
+          ClickTime = atoi(&tline[9]);
++       else if (mystrncasecmp(tline,"ColorLimit",10)==0) {
++         save_color_limit = atoi(&tline[10]);
++         }
+        }
+        GetConfigLine(fd,&tline);
+      }
+
+--
+Dan Espen                                    Phone: (908) 699-5570
+dane@bae.bellcore.com
+444 Hoes Lane  Room RRC 1C-214
+Piscataway, NJ 08854
+--
+Visit the official FVWM web page at <URL:http://www.hpc.uh.edu/fvwm/>.
+To unsubscribe from the list, send "unsubscribe fvwm" in the body of a
+message to majordomo@hpc.uh.edu.
+To report problems, send mail to fvwm-owner@hpc.uh.edu.
+
+----------------------------------------------------------------------------

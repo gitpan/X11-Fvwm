@@ -1,8 +1,4 @@
-$Id: ToDo,v 1.4 1997/03/29 01:16:51 rjray Exp $
-
-* Three packet types are still undocumented, and thus not really supported.
-  In addition, two (M_ICON_FILE and M_DEFAULTICON) I was just guessing at
-  to begin with.
+$Id: ToDo,v 1.5 1997/07/06 23:21:17 rjray Exp $
 
 * Need more example scripts. Maybe even a separate document that better
   explains the Fine Art of writing packet handlers. Or even a better

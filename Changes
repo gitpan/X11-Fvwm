@@ -1,4 +1,4 @@
-Revision history for Perl extension X11::Fvwm.
+-*- text -*- Revision history for Perl extension X11::Fvwm.
 
 0.1  Thu Feb 13 19:37:35 1997
 	- original version; created by h2xs 1.18
@@ -46,3 +46,25 @@ Revision history for Perl extension X11::Fvwm.
 * Some minor cleanup here and there. Little of this, as 0.2 was pretty stable.
 
 * All *.pm have documentation (though some demos still need it).
+
+0.4  Sun Jul  6 17:12:18 MDT 1997
+        - second beta release (will probably hold here until Fvwm upgrades)
+
+* Some demos re-named to support a constant scheme: All demos start with
+  "Perl" so that a single Style class can be applied to them. Those that also
+  use Tk have names that start "PerlTk". This affected pDebug (now PerlDebug)
+  and TkPerlConsole (now PerlTkConsole).
+
+* Docs cleaned up some.
+
+* Now package and ship three patches that are relevant to the implementation
+  of this module, in a "patches" directory. Described in the CAVEATS section
+  of X11::Fvwm.3.
+
+* P_PACKET_PASSALL was a do-nothing option (the nature of split and unpack
+  already controlled the number of parts that a packet was broken down into).
+  It has been removed, and P_ALL_OPTIONS updated.
+
+* Removed the "Stack Trace" button in Fvwm::Defaults.pm:TkFvwmError():
+  Duh, it's always called from the same sequence of routines (processPacket,
+  etc.).

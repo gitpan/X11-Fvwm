@@ -1,5 +1,5 @@
 # This -*- perl -*- script makes the Makefile
-# $Id: Makefile.PL,v 1.2 1997/04/30 18:04:34 rjray Exp $
+# $Id: Makefile.PL,v 1.4 1997/07/06 23:34:13 rjray Exp $
 
 require 5.002;
 use ExtUtils::MakeMaker;
@@ -23,9 +23,6 @@ sub chk_version
     $vnum >= $wanted;
 }
 
-$NAME     = 'X11::Fvwm';
-$VERSION  = '0.3';
-
 chk_version(Tk => 400.200) or
     warn "\n\tThe Tk extension (400.200 or newer) was not found. You will\n" .
     "\tnot be able to use Tk as a GUI (via X11::Fvwm::Tk) without it.\n\n";
@@ -35,14 +32,14 @@ chk_version(X11::Xforms => 0.7) or
     "\twill not be able to use X11::Xforms as a GUI (via X11::Fvwm::Xforms)\n".
     "\twithout it.\n\n";
 
-@DEMO_SCRIPTS = qw(scripts/PerlTkWL scripts/PerlWinList scripts/TkPerlConsole
-                   scripts/pDebug);
+@DEMO_SCRIPTS = qw(scripts/PerlTkWL scripts/PerlWinList scripts/PerlTkConsole
+                   scripts/PerlDebug);
 
 %PL_SCRIPTS = map { sprintf("%s.PL", $_) => "$_" } @DEMO_SCRIPTS;
 
 WriteMakefile(
-              NAME          => $NAME,
-              VERSION       => $VERSION,
+              NAME          => 'X11::Fvwm',
+              VERSION_FROM  => 'Fvwm.pm',
               LIBS          => [''],
               DEFINE        => '',
               INSTALLSCRIPT => '/usr/local/lib/X11/fvwm2',

@@ -35,7 +35,7 @@ use Tk;
 @ISA = qw(X11::Fvwm Exporter);
 @EXPORT = @X11::Fvwm::EXPORT;
 
-$VERSION = sprintf("%d.%02d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/o);
 
 1;
 
@@ -213,7 +213,7 @@ however. This one handles more packet types, as well as demonstrating
 the interaction between X11::Fvwm and the Tk extension. Requires Tk 400.200
 or better.
 
-=item TkPerlConsole
+=item PerlTkConsole
 
 A combination of the B<FvwmConsole> and B<FvwmDebug> modules from the
 I<extras> directory of the Fvwm distribution. Allows the user to send commands

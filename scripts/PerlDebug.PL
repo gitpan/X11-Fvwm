@@ -34,6 +34,8 @@ $Config{'startperl'}
 # In the following, perl variables are not expanded during extraction.
 
 print OUT <<'!NO!SUBS!';
+    eval 'exec perl -S $0 "$@"'
+	if 0;
 
 #
 # Adaption of Dan Astoorian's FvwmDebug.pl script to X11::Fvwm syntax
@@ -63,6 +65,7 @@ $FVWM = new X11::Fvwm;
 ($winid, $contxt, @args) = $FVWM->initModule(M_NEW_PAGE | M_NEW_DESK |
                                              M_ADD_WINDOW |
                                              M_CONFIGURE_WINDOW |
+                                             M_MINI_ICON |
                                              M_LOWER_WINDOW | M_RAISE_WINDOW |
                                              M_DESTROY_WINDOW |
                                              M_DEICONIFY | M_MAP |
@@ -104,6 +107,7 @@ $FVWM->addHandler(M_WINDOW_NAME | M_ICON_NAME | M_RES_CLASS | M_RES_NAME,
                   \&ListName);
 $FVWM->addHandler(M_CONFIG_INFO | M_ERROR, \&ListConfigInfo);
 $FVWM->addHandler(M_END_WINDOWLIST | M_END_CONFIG_INFO, \&ListEndConfigInfo);
+$FVWM->addHandler(M_MINI_ICON, \&ListMiniIcon);
 
 if (defined $opt{'m'} or defined $opt{M})
 {
@@ -247,6 +251,28 @@ sub ListConfigInfo {
 
 sub ListEndConfigInfo {
     &showline("end_config_info\n");
+    1;
+}
+
+sub ListMiniIcon {
+    my ($self, $type, $id, $fid, $ptr, $width, $height, $depth, $pid, $mid,
+	$name) = @_;
+
+    ($id, $fid, $ptr, $pid, $mid) = &tohex($id, $fid, $ptr, $pid, $mid);
+    
+    &showline(<<"END");
+MiniIcon:
+    Win ID:	$id
+    Frame ID:	$fid
+    Fvwm ptr:	$ptr
+    Width:	$width
+    Height:	$height
+    Depth:	$depth
+    Pixmap ID:	$pid
+    Mask ID:	$mid
+    Filename:	$name
+END
+
     1;
 }
 
