@@ -1,17 +1,20 @@
-Sun Jul  6 17:26:26 MDT 1997
+Tue Oct 21 15:29:15 MDT 1997
 
-Version 0.4 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
+Version 1.0 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
 CPAN servers over the next few days.
 
-This is the second beta release. I plan to hold here until the next major
-upgrade to Fvwm itself, as I am now distibuting fvwm patches that I suspect
-will be included in the next release (post-2.0.45).  The interface style
-and overall functionality are now fairly stable, and drastic changes should
-be minimal. Changes in this version are listed below.
+This is the first regular release. The basic functionality of the API and
+the constants is now pretty well frozen. Only changes to Fvwm2 should have
+any future impact. More may be added, but what is currently implemented will
+be supported.
 
-From the README file for 0.4:
+The biggest changes from previous releases are that it now requires that you
+have Perl 5.003 or later, and that your version of Fvwm is 2.0.46 or later.
+It also now checks your version of Fvwm from the source base, to verify this.
 
-X11::Fvwm version 0.4 (beta 2)
+From the README file for 1.0:
+
+X11::Fvwm version 1.0 (altus)
 
 WHAT IS IT?
 
@@ -19,7 +22,7 @@ This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
 only in Perl 5, but with either the Tk extension or the Xforms library as
 your GUI choices!
 
-This requires fvwm 2.0.45 or better, and Perl 5.002 or better. It is
+This requires fvwm 2.0.46 or better, and Perl 5.003 or better. It is
 very highly recommended that you also install the latest version of Tk
 or X11::Xforms, also available from CPAN.
 
@@ -38,34 +41,27 @@ more specific) data, operation on windows managed by fvwm, etc.
 
 PROBLEMS/BUG REPORTS
 
-Please send any reports of problems or bugs to randy@uswest.com. I wouldn't
+Please send any reports of problems or bugs to randy@byz.org. I wouldn't
 mind a short note to know that you're using this, just so I can justify its
 continued development :-).
 
 CREDITS AND LICENSES
 
-This package is copyright (c) 1997 by Randy Ray (randy@uswest.com) and may be
+This package is copyright (c) 1997 by Randy J. Ray (randy@byz.org) and may be
 distributed under terms of the Artistic License used to cover Perl itself.
-See the file Artistic in the distribution of Perl 5.002 or later for details
+See the file Artistic in the distribution of Perl 5.003 or later for details
 of copy and distribution terms. All rights reserved.
 
-From the Changes file for 0.4:
+From the Changes file for 1.0:
 
-* Some demos re-named to support a constant scheme: All demos start with
-  "Perl" so that a single Style class can be applied to them. Those that also
-  use Tk have names that start "PerlTk". This affected pDebug (now PerlDebug)
-  and TkPerlConsole (now PerlTkConsole).
+* Added a new sample Tk script, PerlTkDesker
 
-* Docs cleaned up some.
+* A little more documentation clean-up.
 
-* Now package and ship three patches that are relevant to the implementation
-  of this module, in a "patches" directory. Described in the CAVEATS section
-  of X11::Fvwm.3.
+* Dropped the shipping of two patches that are now part of Fvwm 2.0.46
 
-* P_PACKET_PASSALL was a do-nothing option (the nature of split and unpack
-  already controlled the number of parts that a packet was broken down into).
-  It has been removed, and P_ALL_OPTIONS updated.
+* Makefile.PL now allows for specification of FVWM_DIR (for source) and
+  FVWM_MOD_DIR (for installation of samples). It also checks for a file
+  version.h in $FVWM_DIR, and checks that it defines VERSION, and that
+  VERSION is at least the required level.
 
-* Removed the "Stack Trace" button in Fvwm::Defaults.pm:TkFvwmError():
-  Duh, it's always called from the same sequence of routines (processPacket,
-  etc.).

@@ -1,8 +1,29 @@
 # This -*- perl -*- script makes the Makefile
-# $Id: Makefile.PL,v 1.4 1997/07/06 23:34:13 rjray Exp $
+# $Id: Makefile.PL,v 1.5 1997/10/21 21:26:38 rjray Exp $
 
-require 5.002;
+require 5.003;
 use ExtUtils::MakeMaker;
+use Carp;
+use IO::File;
+
+$FVWM_DIR = '/usr/local/src/fvwm';
+$FVWM_MOD_DIR = '/usr/local/lib/X11/fvwm2';
+
+if (@ARGV)
+{
+    my @args;
+    my ($name, $val);
+
+    @args = grep(/^FVWM/, @ARGV);   # Save our args, but
+    @ARGV = grep(! /^FVWM/, @ARGV); # let MM handle the rest
+
+    for (@args)
+    {
+        ($name, $val) = split(/=/, $_, 2);
+        $val = 1 unless (defined $val);
+        $$name = $val;
+    }
+}
 
 # This is borrowed almost verbatim from Graham Barr's MailTools package
 sub chk_version
@@ -32,8 +53,41 @@ chk_version(X11::Xforms => 0.7) or
     "\twill not be able to use X11::Xforms as a GUI (via X11::Fvwm::Xforms)\n".
     "\twithout it.\n\n";
 
-@DEMO_SCRIPTS = qw(scripts/PerlTkWL scripts/PerlWinList scripts/PerlTkConsole
-                   scripts/PerlDebug);
+sub chk_fvwm_version
+{
+    my ($dir, $need) = @_;
+
+    if (-e "$dir/version.h")
+    {
+        my $fh = new IO::File "$dir/version.h" or
+            croak "Could not open $dir/version.h: $!, stopped";
+        while (defined($_ = <$fh>))
+        {
+            next unless /VERSION "(.*)"/o;
+            $_ = $1;
+            s/\.//go;          # Squeeze out '.' and we can compare these two
+            $need =~ s/\.//go; # numerically.
+            if ($need == $_)
+            {
+                print "Fvwm2 is rooted at $dir and is the correct version\n";
+                undef $fh;
+                return;
+            }
+        }
+        undef $fh;
+        croak "No VERSION definition found in $dir/version.h, stopped";
+    }
+    else
+    {
+        croak "Directory $dir is not valid, or Fvwm's version.h could not " .
+            "be found, stopped";
+    }
+}
+
+chk_fvwm_version $FVWM_DIR, "2.0.46";
+
+@DEMO_SCRIPTS = qw(scripts/PerlTkWL  scripts/PerlWinList scripts/PerlTkConsole
+                   scripts/PerlDebug scripts/PerlTkDesker);
 
 %PL_SCRIPTS = map { sprintf("%s.PL", $_) => "$_" } @DEMO_SCRIPTS;
 
@@ -42,9 +96,9 @@ WriteMakefile(
               VERSION_FROM  => 'Fvwm.pm',
               LIBS          => [''],
               DEFINE        => '',
-              INSTALLSCRIPT => '/usr/local/lib/X11/fvwm2',
+              INSTALLSCRIPT => $FVWM_MOD_DIR,
               INC           => '-I$(FVWMSRCDIR)',
-              macro         => { 'FVWMSRCDIR' => '/usr/local/src/fvwm' },
+              macro         => { 'FVWMSRCDIR' => $FVWM_DIR },
               dist          => { COMPRESS => 'gzip -9f', SUFFIX => 'gz' },
               EXE_FILES     => [@DEMO_SCRIPTS],
               PL_FILES      => \%PL_SCRIPTS,

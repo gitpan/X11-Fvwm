@@ -68,3 +68,17 @@
 * Removed the "Stack Trace" button in Fvwm::Defaults.pm:TkFvwmError():
   Duh, it's always called from the same sequence of routines (processPacket,
   etc.).
+
+1.0  Tue Oct 21 15:37:04 MDT 1997
+	- first full release (altus)
+
+* Added a new sample Tk script, PerlTkDesker
+
+* A little more documentation clean-up.
+
+* Dropped the shipping of two patches that are now part of Fvwm 2.0.46
+
+* Makefile.PL now allows for specification of FVWM_DIR (for source) and
+  FVWM_MOD_DIR (for installation of samples). It also checks for a file
+  version.h in $FVWM_DIR, and checks that it defines VERSION, and that
+  VERSION is at least the required level.

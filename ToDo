@@ -1,9 +1,13 @@
-$Id: ToDo,v 1.5 1997/07/06 23:21:17 rjray Exp $
+$Id: ToDo,v 1.6 1997/10/21 21:28:13 rjray Exp $
 
 * Need more example scripts. Maybe even a separate document that better
   explains the Fine Art of writing packet handlers. Or even a better
   document on the module API. But then we get into stuff that needs to be
   with Fvwm itself.
 
-* Get delivery of scripts into a configurable module path, currently go to
-  /usr/local/lib/X11/fvwm2.
+* Finish the functionality of PerlTkDesker and document it.
+
+* Re-do the mini-icons part of PerlTkWL with regards to the expanded
+  M_MINI_ICON enhancements.
+
+* Some samples for X11::Fvwm::Xforms would be cool.

@@ -1,6 +1,15 @@
-These patches are relative to fvwm 2.0.45. They add certain functionality
-that X11::Fvwm either supports (the ColorLimit patch) or relies on (the
-M_WINDOWSHADE and M_MINI_ICON patches). These patches are expected to be in
-the next release of fvwm, but are bundled here until then.
+This patch provides the ColorLimit functionality that X11::Fvwm also supports.
+This patch will work against 2.0.46 Fvwm, though you may have to use the
+apropos options to patch to overlook whitespace discrepancies. The GNU patch
+command line you'll need is:
+
+patch --ignore-whitespace --fuzz=3
+
+The patches previously distributed (to alter the format of the windowshade
+and mini-icon packet types) are no longer needed, as they were rolled in to
+2.0.46. It is recommended that you be using *.46, since the X11::Fvwm unpack
+formats for these packets expects them to be the updated form. If you are
+using an older Fvwm2 for some reason, you can download the last version of
+this package (0.4) for those patches.
 
 randy

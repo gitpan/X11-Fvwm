@@ -21,7 +21,7 @@
 
 package X11::Fvwm::Tk;
 
-require 5.002;
+require 5.003;
 
 use strict;
 use vars qw($VERSION @ISA @EXPORT);
@@ -35,7 +35,7 @@ use Tk;
 @ISA = qw(X11::Fvwm Exporter);
 @EXPORT = @X11::Fvwm::EXPORT;
 
-$VERSION = sprintf("%d.%02d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/o);
 
 1;
 
@@ -68,14 +68,17 @@ sub new
 
     bless $self, $class;
     $self->{topLevel} = $top;
+    $self->{X_ID}     = $top->id;
 
     $self;
 }
 
 #
-# Instance variable access method
+# Instance variable access methods
 #
 sub toplevel { shift->{topLevel}; }
+
+sub X_ID     { shift->{X_ID};     }
 
 ##############################################################################
 #
@@ -181,6 +184,15 @@ Returns the Tk toplevel that this object was created with. Unlike other
 instance variable-related methods, the toplevel cannot be changed, so this
 method ignores any arguments passed to it.
 
+=item X_ID
+
+$self->X_ID
+
+Returns the X windows ID for the window that is used for C<$top>. This is
+effectely the same as calling C<$self->toplevel->id>, but this value is
+cached when B<new> is called, making this method-access more efficient. This
+value is returned as a hexadecimal string.
+
 =back
 
 =head2 Instance Variables
@@ -195,6 +207,12 @@ The Tk object that was passed as the toplevel this object will use, should
 it need to call any Tk widget methods (such as dialog creation). It is
 recommended that you use the access method B<toplevel> instead of reading
 this directly.
+
+=item X_ID
+
+The hexadecimal window identifier of the top-level window in the running
+application. It is recommended that you use the access method B<$self->X_ID>
+instead of reading this directly.
 
 =back
 
@@ -219,6 +237,16 @@ A combination of the B<FvwmConsole> and B<FvwmDebug> modules from the
 I<extras> directory of the Fvwm distribution. Allows the user to send commands
 to Fvwm, and if the debugging is enabled, also shows traffic from Fvwm in a
 format slightly cleaned up for ease of reading.
+
+=item PerlTkDesker
+
+A simple desktop-selector that resembles the pager in the tkGoodStuff
+package. The idea was to demonstrate minimal event interest (since the other
+two examples catch almost all packet types) with an actually useful tool.
+It is currently very poorly documented, but uses almost the same parameters
+as the Pager. The difference is that this tool expects all desktops to be 1x1,
+and only allows movement between desktops. Later releases will (hopefully) have
+better documentation.
 
 =back
 

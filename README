@@ -1,4 +1,4 @@
-X11::Fvwm version 0.3 (beta 1)
+X11::Fvwm version 1.0 (altus)
 
 WHAT IS IT?
 
@@ -6,7 +6,7 @@ This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
 only in Perl 5, but with either the Tk extension or the Xforms library as
 your GUI choices!
 
-This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is
+This requires fvwm 2.0.46 or better, and perl 5.003 or better. It is
 very highly recommended that you also install the latest version of Tk
 (which is Tk400.202 as of this writing) or X11::Xforms (0.7 or better),
 also available from CPAN.
@@ -59,26 +59,30 @@ there are:
 	#include "fvwm/module.h"
 
 So the value of FVWMSRCDIR has to be such that these includes do not fail. If
-your fvwm source is not in /usr/local/src/fvwm, you can either:
+your fvwm source is not in /usr/local/src/fvwm, you can set that when you
+create the Makefile:
 
-	* Change the value in Makefile.PL before running perl on it
+	perl Makefile.PL FVWM_DIR=/your/path/to/fvwm
 
-	* invoke make with "make FVWMSRCDIR=/your/path/to/it"
+There is another option you may need, called FVWM_MOD_DIR. This sets the
+directory to install the sample modules to, and defaults to the directory
+/usr/local/lib/X11/fvwm2. You can adjust this with:
+
+	perl Makefile.PL FVWM_MOD_DIR=/opt/fvwm/something
+
+as appropriate. Both of these options can be used together.
 
 CAVEATS
 
-As this is still in alpha, there are a few gotchas to watch for. One in
-particular is thatthe sample scripts are currently installed in
-/usr/local/lib/X11/fvwm2, the directory on my system that fvwm2 modules
-went into. You may want to change the setting of INSTALLSCRIPT in the
-file Makefile.PL before starting the build process.
+I think I've covered myself pretty well, but Caveat Emptor just in case.
 
 EXAMPLES
 
 There are some example scripts in the directory scripts/. Currently, these
-are rather limited (two versions of window list utilities), but more will
-hopefully get added. They also serve as examples of simple non-interactive
-modules, and more complex modules with GUI and everything.
+are rather limited (two versions of window list utilities, a console, a
+non-interactive debugger and a desktop spanner), but more will hopefully
+get added. They also serve as examples of simple non-interactive modules,
+and more complex modules with GUI and everything.
 
 PROBLEMS/BUG REPORTS
 
@@ -90,5 +94,5 @@ CREDITS AND LICENSES
 
 This package is copyright (c) 1997 by Randy Ray (randy@byz.org) and may be
 distributed under terms of the Artistic License used to cover Perl itself.
-See the file Artistic in the distribution of Perl 5.002 or later for details
+See the file Artistic in the distribution of Perl 5.003 or later for details
 of copy and distribution terms. All rights reserved.

@@ -20,7 +20,7 @@
 #
 #                           This code is covered under the terms of the
 #                           Artistic License that covers Perl 5. See the file
-#                           ARTISTIC in your distribution of Perl 5 for
+#                           Artistic in your distribution of Perl 5 for
 #                           details.
 #
 #   Functions:      AUTOLOAD
@@ -44,7 +44,7 @@
 
 package X11::Fvwm;
 
-require 5.002;
+require 5.003;
 
 use strict;
 use Carp;
@@ -146,8 +146,8 @@ use IO::File;
              START_FLAG
             );
 
-$VERSION = '0.4';
-$revision = sprintf("%d.%02d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = '1.0';
+$revision = sprintf("%d.%02d", q$Revision: 1.7 $ =~ /(\d+)\.(\d+)/o);
 
 #
 # This AUTOLOAD is intended to facilitate the loading of constants from the XS
@@ -352,8 +352,10 @@ sub set_mask
     $old;
 }
 
-__END__
-
+#
+# initModule moved out of autoloading-area 9/24/97, since it is pretty much
+# always called, as well.
+#
 ##############################################################################
 #
 #   Sub Name:       initModule
@@ -405,6 +407,19 @@ sub initModule
 
     ($self->{fvwmWinId}, $self->{fvwmContext}, @argv);
 }
+
+#
+# Simply method-access to the args list this module was invoked with, to avoid
+# developers having to derefence $self->{argv} all the time:
+#
+sub argv
+{
+    my $self = shift;
+
+    @{$self->{argv}};
+}
+
+__END__
 
 ##############################################################################
 #
@@ -2120,6 +2135,9 @@ file.
 
 =back
 
+Graphically-based examples that use the Tk extension to Perl are documented
+in the page for B<X11::Fvwm::Tk> (see L<X11::Fvwm::Tk>).
+
 =head1 BUGS
 
 Would not surprise me in the least.
@@ -2127,24 +2145,22 @@ Would not surprise me in the least.
 =head1 CAVEATS
 
 In keeping with the UNIX philosophy, B<X11::Fvwm> does not keep you from
-doing stupid things, as that would also keep you from doing clever things.
-What this means is that there are several areas with which you can hang your
+doing stupid things, as that would also prevent you from doing clever things.
+What this means is that there are several ways in which you can hang your
 module or even royally confuse your running I<Fvwm> process. This is due to
 flexibility, not bugs.
 
-The contents of the B<M_WINDOWSHADE>, B<M_DEWINDOWSHADE> and
-B<M_MINI_ICON> packets are
-based on patches submitted by the author. Without these patches, these packets
-do not return a level of information useful to B<X11::Fvwm>.
-Access to the frame ID or the database ID is dependant on these patches.
-As of release 0.4, these patches are available in a sub-directory of the
-B<X11::Fvwm> distribution called "patches", and are assumed to be applied
-against Fvwm 2.0.45.
-
 The B<ColorLimit> parameter that is fetched by getConfigInfo is only
-accessible if you have applied the color-limiting patch to Fvwm 2.0.45.
-This patch is also supplied in the "patches" sub-directory, for your
+accessible if you have applied the color-limiting patch to Fvwm 2.0.46.
+This patch is supplied in the "patches" sub-directory for your
 convenience.
+
+Version 1.0 of X11::Fvwm is the first non-beta release, but depends on Fvwm
+version 2.0.46 or later, due to patches that normalize the packet contents of
+some of the packet types (specifically, B<M_WINDOWSHADE>, B<M_DEWINDOWSHADE>
+and B<M_MINI_ICON>). The catching of the I<ColorLimit> setting is not critical
+to the internal workings of B<X11::Fvwm>, so that patch while supplied is
+considered optional.
 
 =head1 AUTHOR
 

@@ -11,10 +11,9 @@ MANIFEST		Ummm, this file, I think...
 Makefile.PL		MakeMaker code for building
 patches/README		Patches to fvwm 2.0.45
 patches/colorlimit.patch
-patches/windowshade.patch
-patches/mini-icon.patch
 scripts/PerlWinList.PL  Simple text-based sample
 scripts/PerlTkWL.PL	More advanced window list, uses Tk
+scripts/PerlTkDesker.PL	Desktop panner sample script, uses Tk
 scripts/PerlTkConsole.PL	Combination console/debug tracer, uses Tk
 scripts/PerlDebug.PL	Simple packet echo utility for background debugging
 t/boot.t		Test script
