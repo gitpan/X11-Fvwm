@@ -1,0 +1,92 @@
+X11::Fvwm version 0.1 (alpha 1)
+
+WHAT IS IT?
+
+This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
+only in Perl 5, but with the Tk extension as your GUI library!
+
+This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is very
+highly recommended that you also install the latest version of Tk (which is
+Tk400.202 as of this writing), also available from CPAN.
+
+WHAT DOES IT DO?
+
+Fvwm2 has a very well-defined module API, to allow the brunt of non-core
+window-manager work be done by external modules. X11::Fvwm is a layer over
+this interface, allowing you to use Perl rather than C as the language for
+developing these modules.
+
+When fvwm launches a module, it sets up file descriptors for two-way
+communication, and proceeds to occassionally broadcast data packets to
+those modules that have asked to receive the given data type. The modules,
+in turn, can send commands back to fvwm, including requests for more (and
+more specific) data, operation on windows managed by fvwm, etc.
+
+INSTALLATION
+
+The package should be uncompressed using the GNU zip utility. Once done and
+you have cd'd down to the directory:
+
+	gzcat X11-Fvwm.tar.gz | tar xf -
+	cd X11/Fvwm
+
+you will need to create the Makefile and verify that your package is
+complete:
+
+	perl Makefile.PL
+
+This will verify the package contents against the manifest and create the
+file Makefile. Now all that needs to be done is:
+
+	make
+	make test
+	make install                  # Assuming all tests were passed
+
+An important note here: this extension uses compiled C code to reference the
+flags and constants used by fvwm in module communication. When you run make,
+you will need to ensure that it knows the proper path to the fvwm source
+base. The make macro and its default are:
+
+	FVWMSRCDIR=/usr/local/src/fvwm
+
+Note that the fvwm source tree has the actual C source code under another
+directory called fvwm. Within the file Fvwm.xs (and the resultant Fvwm.c),
+there are:
+
+	#include "fvwm/fvwm.h"
+	#include "fvwm/module.h"
+
+So the value of FVWMSRCDIR has to be such that these includes do not fail. If
+your fvwm source is not in /usr/local/src/fvwm, you can either:
+
+	* Change the value in Makefile.PL before running perl on it
+
+	* invoke make with "make FVWMSRCDIR=/your/path/to/it"
+
+CAVEATS
+
+As this is still in alpha, there are a few gotchas to watch for. One in
+particular is thatthe sample scripts are currently installed in
+/usr/local/lib/X11/fvwm2, the directory on my system that fvwm2 modules
+went into. You may want to change the setting of INSTALLSCRIPT in the
+file Makefile.PL before starting the build process.
+
+EXAMPLES
+
+There are some example scripts in the directory scripts/. Currently, these
+are rather limited (two versions of window list utilities), but more will
+hopefully get added. They also serve as examples of simple non-interactive
+modules, and more complex modules with GUI and everything.
+
+PROBLEMS/BUG REPORTS
+
+Please send any reports of problems or bugs to randy@byz.org. I wouldn't
+mind a short note to know that you're using this, just so I can justify its
+continued development :-).
+
+CREDITS AND LICENSES
+
+This package is copyright (c) 1997 by Randy Ray (randy@byz.org) and may be
+distributed under terms of the Artistic License used to cover Perl itself.
+See the file Artistic in the distribution of Perl 5.002 or later for details
+of copy and distribution terms. All rights reserved.

@@ -1,0 +1,48 @@
+Wed Mar 19 12:21:45 MST 1997
+
+Version 0.1 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
+CPAN servers over the next few days.
+
+This is an alpha release. Not all planned features are in, not all data
+packet types are yet correctly identified and dissected. The interface
+style andoverall functionality are still subject to drastic change before
+this moves into beta.
+
+From the README file for 0.1:
+
+X11::Fvwm version 0.1 (alpha 1)
+
+WHAT IS IT?
+
+This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
+only in Perl 5, but with the Tk extension as your GUI library!
+
+This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is very
+highly recommended that you also install the latest version of Tk (which is
+Tk400.202 as of this writing), also available from CPAN.
+
+WHAT DOES IT DO?
+
+Fvwm2 has a very well-defined module API, to allow the brunt of non-core
+window-manager work be done by external modules. X11::Fvwm is a layer over
+this interface, allowing you to use Perl rather than C as the language for
+developing these modules.
+
+When fvwm launches a module, it sets up file descriptors for two-way
+communication, and proceeds to occassionally broadcast data packets to
+those modules that have asked to receive the given data type. The modules,
+in turn, can send commands back to fvwm, including requests for more (and
+more specific) data, operation on windows managed by fvwm, etc.
+
+PROBLEMS/BUG REPORTS
+
+Please send any reports of problems or bugs to randy@byz.org. I wouldn't
+mind a short note to know that you're using this, just so I can justify its
+continued development :-).
+
+CREDITS AND LICENSES
+
+This package is copyright (c) 1997 by Randy Ray (randy@byz.org) and may be
+distributed under terms of the Artistic License used to cover Perl itself.
+See the file Artistic in the distribution of Perl 5.002 or later for details
+of copy and distribution terms. All rights reserved.

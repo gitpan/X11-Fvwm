@@ -1,0 +1,11 @@
+ANNOUNCE		Message(s) posted to notify people of releases
+README			Overview and installation instructions
+ToDo			List of things undone
+Changes			Record of change history
+Fvwm.pm			Base API library
+Fvwm.xs			XS module to convert constants from fvwm.h and module.h
+MANIFEST		Ummm, this file, I think...
+Makefile.PL		MakeMaker code for building
+scripts/PerlWinList
+scripts/PerlTkWL
+t/boot.t

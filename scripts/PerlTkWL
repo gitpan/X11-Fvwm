@@ -1,0 +1,1402 @@
+#!/usr/bin/perl
+
+#
+# A spiffier WinList written in perl using the Tk extension
+#
+# (c) 1997 Randy Ray, all rights reserved
+#
+
+use 5.003;
+
+use strict;
+use vars qw($TOP $frame %winlist $TITLE $CURRENT_FOCUS $MAX_NAME_LEN
+            @last_ordering %OPTS %IMAGES);
+use Carp;
+use IO::File;
+
+use Tk;
+use X11::Fvwm;
+
+$TOP = new MainWindow;
+my $mod = new X11::Fvwm INIT => 1,     # Go ahead and run initModule
+                        CONFIG => 1,   # Go ahead and get config info
+                        # The mask we will use: all the packets that we
+                        # expect to care about
+                        MASK => (M_ADD_WINDOW |
+                                 M_DESTROY_WINDOW |
+                                 M_ICONIFY |
+                                 M_DEICONIFY |
+                                 M_FOCUS_CHANGE |
+                                 M_WINDOW_NAME |
+                                 M_ICON_NAME |
+                                 M_RES_CLASS |
+                                 M_RES_NAME |
+                                 M_CONFIGURE_WINDOW |
+                                 M_ERROR);
+&ReadFvwmOptions($mod, $TOP);
+
+$frame = $TOP->Frame;
+
+#
+# What do we call ourselves?
+#
+$TITLE = $OPTS{Title} || 'PerlTkWL - WinList in pTk';
+$TOP->title($TITLE);
+$TOP->configure(-anchor => $OPTS{Anchor});
+$TOP->transient($TOP) if (defined $mod->{argv}->[0] and
+                          $mod->{argv}->[0] eq 'Transient');
+# $TOP->geometry($OPTS{Geometry}) if (defined $OPTS{Geometry} and
+#                                   $OPTS{Geometry} =~ /^([+-]\d+){2}$/o);
+$TOP->bind('<KeyPress-q>', sub { &ExitGracefully($TOP, $mod) });
+
+$CURRENT_FOCUS = undef;
+
+#
+# Maximum length for window names: greater than this, and the name is cut
+# down to $MAX_NAME_LEN - 3, and "..." is added at the end.
+#
+$MAX_NAME_LEN = $OPTS{MaxNameLen} || 15;
+
+&ReadWinList($mod) or croak "Could not get window list from fvwm\n";
+&MakeInitialButtons($frame, $mod);
+&RefreshWinList(1);
+
+$frame->pack;
+
+#
+# Now define our event handlers. Where possible, use closures
+#
+$mod->addHandler(M_ERROR,
+                 sub {
+                     my ($type, $id, $frameid, $ptr, $error) = @_;
+
+                     my $err = $TOP->Dialog(-title => 'FVWM Error',
+                                            -bitmap => 'error',
+                                            -default_button => 'Dismiss',
+                                            -text => $error,
+                                            -font => 'fixed',
+                                            -foreground => $OPTS{fg},
+                                            -background => $OPTS{bg},
+                                            -buttons => ['Dismiss', 'Exit']);
+                     my $btn = $err->Show(-global);
+
+                     return ($btn eq 'Exit') ? 0 : 1;
+                 });
+
+$mod->addHandler(M_ICONIFY | M_DEICONIFY,
+                 sub {
+                     my ($type, $id, $frameid, $ptr) = @_;
+
+                     if ($type == M_ICONIFY)
+                     {
+                         # Set our internal track of the flags to include this
+                         $winlist{$ptr}->{FLAGS} |= F_ICONIFIED;
+                     }
+                     else
+                     {
+                         # Clear out the flag in our interal flags
+                         $winlist{$ptr}->{FLAGS} &= ~F_ICONIFIED;
+                     }
+
+                     if ($OPTS{Style} ne 'text')
+                     {
+                         $winlist{$ptr}->{iconLabel}->configure(-image =>
+                                                                &updateIcon($ptr));
+                     }
+                     else
+                     {
+                         $winlist{$ptr}->{BUTTON}->configure(-text =>
+                                                             &makeLabel($ptr));
+                     }
+
+                     &SetIconColors(($type == M_ICONIFY) ? 1 : 0, $ptr);
+                     &RefreshWinList if ($OPTS{'sort'} =~ /icon/oi);
+
+                     $ptr;
+                 });
+
+$mod->addHandler(M_DESTROY_WINDOW,
+                 sub {
+                     my ($type, $id, $frameid, $ptr) = @_;
+
+                     if (defined $winlist{$ptr}->{FRAME})
+                     {
+                         $winlist{$ptr}->{FRAME}->gridForget if
+                             ($winlist{$ptr}->{PACKED});
+                         $winlist{$ptr}->{FRAME}->destroy;
+                     }
+                     undef $winlist{$ptr};
+                     delete $winlist{$ptr};
+                     &RefreshWinList;
+
+                     $ptr;
+                 });
+
+$mod->addHandler(M_ICON_NAME | M_WINDOW_NAME | M_RES_CLASS | M_RES_NAME,
+                 sub {
+                     my ($type, $id, $frameid, $ptr, $name) = @_;
+
+                     unless (exists $winlist{$ptr})
+                     {
+                         # this is part of a new window coming up
+                         $winlist{$ptr} = {};
+                     }
+
+                     if ($type == M_ICON_NAME)
+                     {
+                         $winlist{$ptr}->{ICONNAME} = $name;
+                     }
+                     elsif ($type == M_WINDOW_NAME)
+                     {
+                         $winlist{$ptr}->{NAME} = $name;
+                     }
+                     elsif ($type == M_RES_CLASS)
+                     {
+                         $winlist{$ptr}->{RESCLASS} = $name;
+                     }
+                     else
+                     {
+                         $winlist{$ptr}->{RESNAME} = $name;
+                     }
+
+                     &MakeButton($ptr, $mod, $frame);
+                     &RefreshWinList;
+
+                     $ptr;
+                 });
+
+$mod->addHandler(M_CONFIGURE_WINDOW,
+                 sub {
+                     my ($type, $id, $frameid, $ptr, @args) = @_;
+
+                     unless (exists $winlist{$ptr})
+                     {
+                         # this is part of a new window coming up
+                         $winlist{$ptr} = {};
+                     }
+
+                     $winlist{$ptr}->{X_POS}  = $args[0];
+                     $winlist{$ptr}->{Y_POS}  = $args[1];
+                     $winlist{$ptr}->{WIDTH}  = $args[2];
+                     $winlist{$ptr}->{HEIGHT} = $args[3];
+                     $winlist{$ptr}->{DESK}   = $args[4];
+                     $winlist{$ptr}->{FLAGS}  = $args[5];
+
+                     &MakeButton($ptr, $mod, $frame) && &RefreshWinList;
+
+                     $ptr;
+                 });
+
+$mod->addHandler(M_FOCUS_CHANGE,
+                 sub {
+                     my ($type, $id, $frameid, $ix) = @_;
+
+                     if (defined $CURRENT_FOCUS)
+                     {
+                         my $id = $CURRENT_FOCUS;
+                         undef $CURRENT_FOCUS;
+                         last unless (defined $winlist{$id}->{FRAME});
+
+                         &removeFocus($id);
+                     }
+
+                     return 1 unless (defined $winlist{$ix}->{FRAME});
+
+                     $CURRENT_FOCUS = $ix;
+                     &setFocus($ix);
+
+                     $ix;
+                 });
+
+#
+# Any signals we need to be wary of?
+#
+$SIG{PIPE} = sub { exit };
+
+$mod->eventLoop($TOP); # Never returns
+
+exit;
+
+##############################################################################
+#
+#   Sub Name:       ReadFvwmOptions
+#
+#   Description:    Look at the module options from Fvwm for any that are
+#                   relevant to this module.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $mod      in      ref       Object of class X11::Fvwm
+#                   $top      in      ref       Tk top-level
+#
+#   Globals:        %OPTS
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub ReadFvwmOptions
+{
+    my $mod = shift;
+    my $top = shift;
+
+    # Without any arguments, this method will return a hash populated only
+    # with keys that contain our app name as a substring. The *trimname
+    # argument doesn't count-- getConfigInfo will pull it out early, and use
+    # it as a direction to strip the "PerlTkWL" part of the name from each key.
+    %OPTS = $mod->getConfigInfo('*trimname');
+
+    # Just go down the list looking for things or setting defaults.
+    $OPTS{fg}   = $OPTS{Foreground} || 'black';
+    $OPTS{bg}   = $OPTS{Background} || 'white';
+    $OPTS{afg}  = $OPTS{ActiveForeground} || $OPTS{bg};
+    $OPTS{abg}  = $OPTS{ActiveBackground} || $OPTS{fg};
+    $OPTS{ffg}  = $OPTS{FocusForeground} || $OPTS{fg};
+    $OPTS{fbg}  = $OPTS{FocusBackground} || $OPTS{bg};
+    $OPTS{ifg}  = $OPTS{IconForeground} || $OPTS{fg};
+    $OPTS{ibg}  = $OPTS{IconBackground} || $OPTS{bg};
+
+    $OPTS{iconfg} = $OPTS{IconForeground} || undef;
+    $OPTS{iconbg} = $OPTS{IconBackground} || $OPTS{bg};
+
+    $OPTS{Anchor} = (defined $OPTS{Anchor} and
+                     $OPTS{Anchor} =~ /(n|s|e|w|ne|nw|se|sw|center)/oi) ?
+                         lc $1 : 'nw';
+    $OPTS{UseSkipList} = (defined $OPTS{UseSkipList} and
+                          $OPTS{UseSkipList} =~ /no|false|0/oi) ? 0 : 1;
+    $OPTS{'sort'}  = lc $OPTS{SortStyle} || 'alpha';
+    $OPTS{UseMiniIcons} = (defined $OPTS{UseMiniIcons} and
+                           $OPTS{UseMiniIcons} =~ /yes|true|1/oi) ? 1 : 0;
+
+    if (exists $OPTS{Action})
+    {
+        my @actions = ((ref($OPTS{Action}) eq 'ARRAY') ?
+                       @{$OPTS{Action}} : ($OPTS{Action}));
+        my (%actions, $event, $action);
+
+        for (@actions)
+        {
+            ($event, $action) = split(/ /, $_, 2);
+            next unless ($event =~ /^Click\d$/oi);
+            $actions{ucfirst (lc $event)} = $action;
+        }
+        for (qw(Click1 Click2 Click3))
+        {
+            $actions{$_} = 'internal' unless (exists $actions{$_});
+        }
+
+        $OPTS{Action} = \%actions;
+    }
+    else
+    {
+        $OPTS{Action} = { Click1 => 'internal',
+                          Click2 => 'internal',
+                          Click3 => 'internal' };
+    }
+
+    #
+    # Parlay some of these values into X options
+    #
+    $top->optionAdd('*Button.foreground' => $OPTS{fg});
+    $top->optionAdd('*Button.background' => $OPTS{bg});
+    $top->optionAdd('*Button.activeforeground' => $OPTS{afg});
+    $top->optionAdd('*Button.activebackground' => $OPTS{abg});
+    $top->optionAdd('*Button.font' => $OPTS{Font});
+    $top->optionAdd('*Label.foreground' => $OPTS{fg});
+    $top->optionAdd('*Label.background' => $OPTS{bg});
+    $top->optionAdd('*Label.font' => $OPTS{Font});
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       ReadWinList
+#
+#   Description:    Read a current window list from fvwm
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $self     in      ref       Object of class X11::Fvwm
+#
+#
+#   Globals:        %winlist
+#                   @last_ordering
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub ReadWinList
+{
+    my $self = shift;
+
+    my ($len, $packet, $type, @args);
+
+    # Temporarily set the mask to only allow win-list-related packets
+    my $old_mask = $self->mask(M_WINDOW_NAME | M_ICON_NAME |
+                               M_RES_CLASS | M_RES_NAME |
+                               M_CONFIGURE_WINDOW | M_END_WINDOWLIST);
+
+    %winlist = ();
+    @last_ordering = ();
+
+    $self->sendInfo(0, "Send_WindowList");
+
+    while (1)
+    {
+        ($len, $packet, $type) = $self->readPacket;
+        last if ($type & M_END_WINDOWLIST);
+        last if ($len < 0);
+
+        @args = unpack($self->{packetTypes}->{$type}, $packet);
+        unless (exists $winlist{$args[2]})
+        {
+            # Initialize the hashref first
+            $winlist{$args[2]} = {};
+        }
+
+        if ($type & M_WINDOW_NAME)
+        {
+            #
+            # $args[0]         Top-level Window ID from X
+            # $args[1]         Top-level Fvwm frame Window ID
+            # $args[2]         Ptr to internal fvmw database for this window
+            # $args[3]         Window name
+            #
+            $args[3] =~ s/\0.*//o;
+            $winlist{$args[2]}->{NAME}  = $args[3];
+            $winlist{$args[2]}->{WINID} = $args[0];
+        }
+        elsif ($type & M_ICON_NAME)
+        {
+            #
+            # $args[0]         Top-level Window ID from X
+            # $args[1]         Top-level Fvwm frame Window ID
+            # $args[2]         Ptr to internal fvmw database for this window
+            # $args[3]         Icon name
+            #
+            $args[3] =~ s/\0.*//o;
+            $winlist{$args[2]}->{ICONNAME} = $args[3];
+        }
+        elsif ($type & M_RES_CLASS)
+        {
+            #
+            # $args[0]         Top-level Window ID from X
+            # $args[1]         Top-level Fvwm frame Window ID
+            # $args[2]         Ptr to internal fvmw database for this window
+            # $args[3]         Resource class
+            #
+            $args[3] =~ s/\0.*//o;
+            $winlist{$args[2]}->{RESCLASS} = $args[3];
+        }
+        elsif ($type & M_RES_NAME)
+        {
+            #
+            # $args[0]         Top-level Window ID from X
+            # $args[1]         Top-level Fvwm frame Window ID
+            # $args[2]         Ptr to internal fvmw database for this window
+            # $args[3]         Resource name
+            #
+            $args[3] =~ s/\0.*//o;
+            $winlist{$args[2]}->{RESNAME} = $args[3];
+        }
+        elsif ($type & M_CONFIGURE_WINDOW)
+        {
+            #
+            # $args[0]         Top-level Window ID from X
+            # $args[1]         Top-level Fvwm frame Window ID
+            # $args[2]         Ptr to internal fvwm database for this window
+            # $args[3]         Window X position
+            # $args[4]         Window Y position
+            # $args[5]         Window width
+            # $args[6]         Window height
+            # $args[7]         Window desktop (not yet used)
+            # $args[8]         Window flags
+            #
+            $winlist{$args[2]}->{X_POS}  = $args[3];
+            $winlist{$args[2]}->{Y_POS}  = $args[4];
+            $winlist{$args[2]}->{WIDTH}  = $args[5];
+            $winlist{$args[2]}->{HEIGHT} = $args[6];
+            $winlist{$args[2]}->{DESK}   = $args[7];
+            $winlist{$args[2]}->{FLAGS}  = $args[8];
+        }
+    }
+
+    #
+    # All data has been sent by Fvwm, so restore the mask and exit.
+    #
+    $self->mask($old_mask);
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       MakeInitialButtons
+#
+#   Description:    Make the initial set of buttons, based on the current
+#                   contents of %winlist
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $top      in      ref       Window under which to create
+#                                                 the frames
+#                   $mod      in      ref       Fvwm interface object
+#
+#   Globals:        %winlist
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub MakeInitialButtons
+{
+    my ($top, $mod) = @_;
+
+    my ($ix, $label, $frame, $button, $x_off, $y_off);
+
+    &loadImages($top, $mod) if ($OPTS{Style} ne 'text');
+
+    for $ix (keys %winlist)
+    {
+        &MakeButton($ix, $mod, $top);
+    }
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       RefreshWinList
+#
+#   Description:    Draw or refresh the window list frames/buttons.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $force    in      scalar    Force a refresh
+#
+#   Globals:        %winlist
+#                   @last_ordering
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub RefreshWinList
+{
+    my $force = shift;
+
+    my @current_ordering = &SortWinList;
+
+    if (scalar @current_ordering == scalar @last_ordering)
+    {
+        my $diff = 0;
+        for my $ix (scalar @current_ordering)
+        {
+            $diff++ unless ("$current_ordering[$ix]" eq "$last_ordering[$ix]");
+        }
+        return 1 unless ($diff || (defined $force and $force));
+    }
+
+    @last_ordering = @current_ordering;
+
+    my $row = 0;
+    my $height = 0;
+    for (@current_ordering)
+    {
+        next unless defined $winlist{$_}->{FRAME};
+
+        $winlist{$_}->{FRAME}->gridForget;
+        $winlist{$_}->{FRAME}->grid(-column => 0, -row => $row,
+                                    -sticky => 'ew');
+        $winlist{$_}->{PACKED} = 1;
+        $row++;
+        $height += $winlist{$_}->{FRAME}->cget(-height);
+    }
+
+    $TOP->configure(-height => $height);
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       SortWinList
+#
+#   Description:    Sort the list of windows by the window name, returning a
+#                   list of the %winlist keys in what will produce the correct
+#                   ordering.
+#
+#   Arguments:      None.
+#
+#   Globals:        %winlist
+#
+#   Returns:        Success:    list
+#                   Failure:    undef
+#
+##############################################################################
+sub SortWinList
+{
+    my %sort_opts = map { $_, 1 } (split(/,/, $OPTS{'sort'}));
+    my @list;
+
+    if (defined $sort_opts{iconfirst} or defined $sort_opts{iconlast})
+    {
+        my (@icons, @other) = ();
+
+        for (keys %winlist)
+        {
+            if ($winlist{$_}->{FLAGS} & F_ICONIFIED)
+            {
+                push(@icons, $_);
+            }
+            else
+            {
+                push(@other, $_);
+            }
+        }
+
+        unless (defined $sort_opts{alpha})
+        {
+            @icons = sort { $a <=> $b } @icons;
+            @other = sort { $a <=> $b } @other;
+        }
+        else
+        {
+            @icons = sort {
+                (uc $winlist{$a}->{NAME}) cmp (uc $winlist{$b}->{NAME})
+            } @icons;
+            @other = sort {
+                (uc $winlist{$a}->{NAME}) cmp (uc $winlist{$b}->{NAME})
+            } @other;
+        }
+        if (defined $sort_opts{'reverse'})
+        {
+            @icons = reverse @icons;
+            @other = reverse @other;
+        }
+
+        @list = (defined $sort_opts{iconfirst}) ?
+            (@icons, @other) : (@other, @icons);
+    }
+    else
+    {
+        unless (defined $sort_opts{alpha})
+        {
+            @list = sort { $a <=> $b } keys %winlist;
+        }
+        else
+        {
+            @list = sort {
+                (uc $winlist{$a}->{NAME}) cmp (uc $winlist{$b}->{NAME})
+            } keys %winlist;
+        }
+
+        @list = reverse @list if (defined $sort_opts{'reverse'});
+    }
+
+    @list;
+}
+
+##############################################################################
+#
+#   Sub Name:       ButtonClick
+#
+#   Description:    Execute a button click on the specified list entry
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $b        in      scalar    Button that was clicked (1..3)
+#                   $ix       in      scalar    List index of the widget hit
+#                   $top      in      ref       Tk top-level ref
+#                   $mod      in      ref       Fvwm API object
+#
+#   Globals:        %OPT
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub ButtonClick
+{
+    my ($b, $ix, $top, $mod) = @_;
+
+    my %actions = %{$OPTS{Action}};
+
+    my $action = $actions{"Click$b"};
+    return 0 unless (defined $action);
+
+    if ($action eq 'internal')
+    {
+        $action = ('Focus,Iconify -1,Focus', 'Iconify', 'Nop')[$b - 1];
+    }
+
+    $mod->sendInfo($winlist{$ix}->{WINID}, $action);
+}
+
+##############################################################################
+#
+#   Sub Name:       MakeButton
+#
+#   Description:    Create a new button for the specified window. Called by
+#                   MakeInitialButtons and whenever the event loop gets an
+#                   indication of a new window.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $ix       in      scalar    Hash index for new window
+#                   $mod      in      ref       The handle on Fvwm 
+#                   $top      in      ref       The Tk object we are to derive
+#                                                 the outer Frame from 
+#
+#   Globals:        %winlist
+#                   $TITLE
+#
+#   Returns:        Success:    1
+#                   Failure:    0 IMPORTANT! Returned unless all win data read
+#
+##############################################################################
+sub MakeButton
+{
+    my ($ix, $mod, $top) = @_;
+
+    #
+    # To display the button, we must have received three packets: M_ICON_NAME,
+    # M_WINDOW_NAME and M_CONFIGURE_WINDOW. The three fields below will not
+    # exist until each of these three have been read and handled.
+    #
+    return 0 unless (exists $winlist{$ix}->{NAME} &&
+                     exists $winlist{$ix}->{ICONNAME} &&
+                     exists $winlist{$ix}->{X_POS});
+
+    #
+    # Also skip this application, in case they forgot to set it for skipping
+    #
+    return 0 if ($winlist{$ix}->{NAME} eq $TITLE);
+
+    return 0 if ($OPTS{UseSkipList} &&
+                 ($winlist{$ix}->{FLAGS} & F_WINDOWLISTSKIP));
+    return 0 if ($winlist{$ix}->{FLAGS} & F_TRANSIENT);
+
+    if ($OPTS{Style} ne 'graphic')
+    {
+        #
+        # The well-known, comfortable style
+        #
+        if (exists $winlist{$ix}->{FRAME})
+        {
+            $winlist{$ix}->{BUTTON}->configure(-text => &makeLabel($ix));
+            return 0;
+        }
+
+        my ($frame, $button);
+
+        $frame = $top->Frame;
+        &makeLabel($ix);
+        $button = $frame->Button(-text => $winlist{$ix}->{LABEL},
+                                 -highlightthickness => 0);
+        $button->bind('<1>',
+                      sub {
+                          &ButtonClick(1, $ix, $top, $mod);
+                      });
+        $button->bind('<2>',
+                      sub {
+                          &ButtonClick(2, $ix, $top, $mod);
+                      });
+        $button->bind('<3>',
+                      sub {
+                          &ButtonClick(3, $ix, $top, $mod);
+                      });
+        $button->pack(-fill => 'x');
+        $winlist{$ix}->{FRAME} = $frame;
+        $winlist{$ix}->{BUTTON} = $button;
+        $winlist{$ix}->{PACKED} = 0;
+    }
+    else
+    {
+        #
+        # Create the graphics-abusive version
+        #
+        if (exists $winlist{$ix}->{FRAME})
+        {
+            $winlist{$ix}->{nameLabel}->configure(-text => &updateName($ix));
+            $winlist{$ix}->{geomLabel}->configure(-text => &updateGeom($ix));
+            $winlist{$ix}->{iconLabel}->configure(-image => &updateIcon($ix));
+            $winlist{$ix}->{miniLabel}->configure(-image => &updateMini($ix))
+                if ($OPTS{UseMiniIcons});
+            return 0;
+        }
+
+        my ($frame, $nameLabel, $geomLabel, $iconLabel, $miniLabel);
+        $frame = $top->Frame(-relief => 'raised', -borderwidth => 2);
+        $nameLabel = $frame->Label(-anchor => 'w', -text => &updateName($ix));
+        $geomLabel = $frame->Label(-anchor => 'e', -text => &updateGeom($ix));
+        $iconLabel = $frame->Label(-image => &updateIcon($ix));
+        for ($nameLabel, $geomLabel, $iconLabel)
+        {
+            $_->bind('<1>',
+                      sub {
+                          &ButtonClick(1, $ix, $top, $mod);
+                      });
+            $_->bind('<2>',
+                      sub {
+                          &ButtonClick(2, $ix, $top, $mod);
+                      });
+            $_->bind('<3>',
+                      sub {
+                          &ButtonClick(3, $ix, $top, $mod);
+                      });
+        }
+
+        if ($OPTS{UseMiniIcons})
+        {
+            $miniLabel = $frame->Label(-image => &updateMini($ix));
+            $winlist{$ix}->{miniLabel} = $miniLabel;
+            $miniLabel->pack(-side => 'left', -fill => 'both');
+            $miniLabel->bind('<Button-1>',
+                             sub {
+                                 &DeIconifyOrRaise($mod, $ix);
+                             });
+            $miniLabel->bind('<Button-2>', sub { &Iconify($mod, $ix) });
+            $miniLabel->bind('<ButtonPress-3>', sub { 1 });
+            $miniLabel->bind('<ButtonRelease-3>', sub { 1 });
+        }
+        $winlist{$ix}->{nameLabel} = $nameLabel;
+        $nameLabel->pack(-side => 'left', -fill => 'both', -expand => 1);
+        $winlist{$ix}->{iconLabel} = $iconLabel;
+        $iconLabel->pack(-side => 'right', -fill => 'both');
+        $winlist{$ix}->{geomLabel} = $geomLabel;
+        $geomLabel->pack(-side => 'right', -fill => 'both', -expand => 1);
+        $winlist{$ix}->{FRAME} = $frame;
+        $winlist{$ix}->{PACKED} = 0;
+    }
+
+    &SetIconColors(1, $ix) if ($winlist{$ix}->{FLAGS} & F_ICONIFIED);
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       makeLabel
+#
+#   Description:    Create a label for the window/button in $ix.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $ix       in      scalar    Index into %winlist
+#
+#   Globals:        %winlist
+#                   $MAX_NAME_LEN
+#
+#   Environment:    None.
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub makeLabel
+{
+    my $ix = shift;
+
+    my ($x_off, $y_off);
+
+    my $old_label = $winlist{$ix}->{LABEL} || '';
+
+    my $label = ($winlist{$ix}->{FLAGS} & F_ICONIFIED) ?
+        $winlist{$ix}->{ICONNAME} : $winlist{$ix}->{NAME};
+    if (length($label) > $MAX_NAME_LEN)
+    {
+        $label = substr($label, 0, ($MAX_NAME_LEN - 3)) . '...';
+    }
+    $x_off = $winlist{$ix}->{X_POS};
+    $x_off = "+$x_off" unless ($x_off < 0);
+    $y_off = $winlist{$ix}->{Y_POS};
+    $y_off = "+$y_off" unless ($y_off < 0);
+    $label .= sprintf(" %dx%d$x_off$y_off",
+                      $winlist{$ix}->{WIDTH}, $winlist{$ix}->{HEIGHT});
+    $label = "($label)" if ($winlist{$ix}->{FLAGS} & F_ICONIFIED);
+
+    $winlist{$ix}->{LABEL} = $label;
+
+    $label;
+}
+
+#
+# Re-make the text string used in the name label
+#
+sub updateName
+{
+    my $ix = shift;
+
+    my $name = $winlist{$ix}->{NAME};
+
+    if (length($name) > $MAX_NAME_LEN)
+    {
+        $name = substr($name, 0, ($MAX_NAME_LEN - 3)) . '...';
+    }
+    $winlist{$ix}->{nameLabelText} = $name;
+}
+
+#
+# Re-figure the text string used in the geometry label
+#
+sub updateGeom
+{
+    my $ix = shift;
+
+    my ($x_off, $y_off, $label);
+
+    $x_off = $winlist{$ix}->{X_POS};
+    $x_off = "+$x_off" unless ($x_off < 0);
+    $y_off = $winlist{$ix}->{Y_POS};
+    $y_off = "+$y_off" unless ($y_off < 0);
+    $label = sprintf("%dx%d$x_off$y_off",
+                     $winlist{$ix}->{WIDTH}, $winlist{$ix}->{HEIGHT});
+
+    $winlist{$ix}->{geomLabelText} = $label;
+}
+
+#
+# Return the cached image that corresponds to the the icon-state of window
+# $ix. Not to be confused with the optional mini-icons, this is for noting
+# windows that are (not) iconified.
+#
+sub updateIcon
+{
+    my $ix = shift;
+
+    return ($winlist{$ix}->{FLAGS} & F_ICONIFIED) ? $IMAGES{_icon_ON} :
+                                                    $IMAGES{_icon_OFF};
+}
+
+#
+# Select a mini-icon to use (assuming that mini-icons are to be used) for
+# the window. Look for matches by res-class, res-name and finally by name.
+# The match by name is done as a regex substring match, but the others need
+# to match explicitly (case-sensitive, since res name and res class are
+# often the same save for one or two capital letters.
+#
+sub updateMini
+{
+    my $ix = shift;
+
+    return '' unless ($OPTS{UseMiniIcons});
+
+    my $resname = $winlist{$ix}->{RESNAME};
+    my $resclass = $winlist{$ix}->{RESCLASS};
+    my $name = $winlist{$ix}->{NAME};
+    my ($resname_match, $resclass_match, $name_match);
+
+    $resname_match  = (exists $IMAGES{$resname})  ? $IMAGES{$resname}  : undef;
+    $resclass_match = (exists $IMAGES{$resclass}) ? $IMAGES{$resclass} : undef;
+    # trickier
+    $name_match = undef;
+    for (keys %IMAGES)
+    {
+        next if /^_/o;
+        if ($name =~ /$_/i)
+        {
+            $name_match = $IMAGES{$_};
+            last;
+        }
+    }
+
+    # This is the priority order: by name, by resource name, or by resource
+    # class, with the blank used when no others match.
+    return $name_match || $resname_match || $resclass_match ||
+        $IMAGES{_no_mini_icon};
+}
+
+##############################################################################
+#
+#   Sub Name:       loadImages
+#
+#   Description:    Create a cache of images (bitmaps and pixmaps) that may
+#                   potentially be needed by this application.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $top      in      ref       Tk top-level
+#                   $mod      in      ref       Fvwm API hook
+#
+#   Globals:        %IMAGES
+#                   %OPTS
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub loadImages
+{
+    my $top = shift;
+    my $mod = shift;
+
+    %IMAGES = ();
+
+    my (@paths, %paths, @lines, $line, $name, $icon, @pairs);
+
+    my $empty12 = <<END_OF_E12;
+#define empty12_width 12
+#define empty12_height 12
+static unsigned char empty12_bits[] = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+END_OF_E12
+
+    my $empty16 = <<END_OF_E16;
+#define empty16_width 16
+#define empty16_height 16
+static unsigned char empty16_bits[] = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, };
+END_OF_E16
+
+    my $iconified = <<END_ICONIFIED;
+#define iconified_width 12
+#define iconified_height 12
+static char iconified_bits[] = {
+ 0x0e,0x07,0x9b,0x0d,0x91,0x08,0x9b,0x0d,0xfe,0x07,0x90,0x00,0x90,0x00,0xfe,
+ 0x07,0x9b,0x0d,0x91,0x08,0x9b,0x0d,0x0e,0x07};
+END_ICONIFIED
+
+    #
+    # First take care of the two images for iconified/open windows
+    #
+    $IMAGES{_icon_ON}  = $top->Bitmap(-data => $iconified);
+    $IMAGES{_icon_OFF} = $top->Bitmap(-data => $empty12);
+
+    #
+    # This is for using mini-icons, to fill the space on windows that don't
+    # have a defined mini-icon
+    #
+    $IMAGES{_no_mini_icon} = $top->Bitmap(-data => $empty16);
+
+    #
+    # Now, we get the IconPath and PixmapPath variables, for our search
+    # path(s). Then, we go through any and all lines stored in $OPTS{MiniIcon}
+    # to see what icons we need to pre-load.
+    #
+    %paths = $mod->getConfigInfo('IconPath', 'PixmapPath');
+    push(@paths,
+         (split(/:/, $paths{IconPath}))) if (exists $paths{IconPath} and
+                                             $paths{IconPath});
+    push(@paths,
+         (split(/:/, $paths{PixmapPath}))) if (exists $paths{PixmapPath} and
+                                               $paths{PixmapPath});
+    return 0 if ($#paths == -1);
+
+    if (ref($OPTS{MiniIcon}) eq 'ARRAY')
+    {
+        @lines = @{$OPTS{MiniIcon}};
+    }
+    else
+    {
+        @lines = ($OPTS{MiniIcon});
+    }
+
+    for $line (@lines)
+    {
+        @pairs = split(/,/, $line);
+        for (@pairs)
+        {
+            ($name, $icon) = split;
+
+            next unless (defined($icon = &findIcon($icon, @paths)));
+            $IMAGES{$name} = ($icon =~ /\.xpm/oi) ?
+                $top->Pixmap(-file => $icon) :
+                $top->Bitmap(-file => $icon);
+        }
+    }
+
+    1;
+}
+
+#
+# Locate the requested icon file in the list of paths. Return full path, or
+# undef if it wasn't found
+#
+sub findIcon
+{
+    my ($name, @path) = @_;
+
+    for (@path)
+    {
+        return "$_/$name" if (stat("$_/$name") && -f _ && -r _);
+    }
+
+    undef;
+}
+
+#
+# Set the colors on the necessary widgets to reflect that the window indexed
+# by $id is the current holder of the focus.
+#
+sub setFocus
+{
+    my $id = shift;
+
+    if ($OPTS{Style} ne 'text')
+    {
+        for my $wid ($winlist{$id}->{miniLabel}, $winlist{$id}->{nameLabel},
+                     $winlist{$id}->{geomLabel}, $winlist{$id}->{iconLabel},
+                     $winlist{$id}->{FRAME})
+        {
+            $wid->configure(-foreground => $OPTS{ffg},
+                            -background => $OPTS{fbg});
+        }
+    }
+    else
+    {
+        $winlist{$id}->{BUTTON}->configure(-foreground => $OPTS{ffg},
+                                           -background => $OPTS{fbg},
+                                           -activeforeground => $OPTS{fbg},
+                                           -activebackground => $OPTS{ffg});
+    }
+
+    1;
+}
+
+#
+# Change colors back, so that a window that *had* the focus, but no longer 
+# does, has the original colors.
+#
+sub removeFocus
+{
+    my $id = shift;
+
+    if ($OPTS{Style} ne 'text')
+    {
+        for my $wid ($winlist{$id}->{miniLabel}, $winlist{$id}->{nameLabel},
+                     $winlist{$id}->{geomLabel}, $winlist{$id}->{iconLabel},
+                     $winlist{$id}->{FRAME})
+        {
+            $wid->configure(-foreground => $OPTS{fg},
+                            -background => $OPTS{bg});
+        }
+    }
+    else
+    {
+        $winlist{$id}->{BUTTON}->configure(-foreground => $OPTS{fg},
+                                           -background => $OPTS{bg},
+                                           -activeforeground => $OPTS{afg},
+                                           -activebackground => $OPTS{abg});
+    }
+
+    &SetIconColors(1, $id) if ($winlist{$id}->{FLAGS} & F_ICONIFIED);
+
+    1;
+}
+
+##############################################################################
+#
+#   Sub Name:       SetIconColors
+#
+#   Description:    Change the colors of the button as needed by a change in
+#                   one button's iconic state.
+#
+#   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
+#                   $flag     in      scalar    1 if $id just iconified, or 0
+#                   $id       in      scalar    winlist index
+#
+#   Globals:        %OPTS
+#
+#   Returns:        Success:    1
+#                   Failure:    0
+#
+##############################################################################
+sub SetIconColors
+{
+    my ($flag, $id) = @_;
+
+    return 1 if ($OPTS{ifg} eq $OPTS{fg} and
+                 $OPTS{ibg} eq $OPTS{bg});
+
+    if ($flag)
+    {
+        if ($OPTS{Style} ne 'text')
+        {
+            for my $wid ($winlist{$id}->{miniLabel},
+                         $winlist{$id}->{nameLabel},
+                         $winlist{$id}->{geomLabel},
+                         $winlist{$id}->{iconLabel},
+                         $winlist{$id}->{FRAME})
+            {
+                $wid->configure(-foreground => $OPTS{ifg},
+                                -background => $OPTS{ibg});
+            }
+        }
+        else
+        {
+            $winlist{$id}->{BUTTON}->configure(-foreground => $OPTS{ifg},
+                                               -background => $OPTS{ibg},
+                                               -activeforeground =>
+                                               $OPTS{ibg},
+                                               -activebackground =>
+                                               $OPTS{ifg});
+        }
+    }
+    else
+    {
+        if ($OPTS{Style} ne 'text')
+        {
+            for my $wid ($winlist{$id}->{miniLabel},
+                         $winlist{$id}->{nameLabel},
+                         $winlist{$id}->{geomLabel},
+                         $winlist{$id}->{iconLabel},
+                         $winlist{$id}->{FRAME})
+            {
+                $wid->configure(-foreground => $OPTS{fg},
+                                -background => $OPTS{bg});
+            }
+        }
+        else
+        {
+            $winlist{$id}->{BUTTON}->configure(-foreground => $OPTS{fg},
+                                               -background => $OPTS{bg},
+                                               -activeforeground => $OPTS{afg},
+                                               -activebackground => $OPTS{abg});
+        }
+    }
+}
+
+#
+# Do a clean exit, as if we meant to
+#
+sub ExitGracefully
+{
+    my ($top, $mod) = @_;
+
+    $mod->invokeHandler('EXIT');
+    $top->destroy;
+    $mod->endModule;
+}
+
+__END__
+
+=head1 NAME
+
+PerlTkWL - A window-list utility in Perl, using the Tk extension
+
+=head1 SYNOPSIS
+
+B<PerlTkWL> can only be spawned by I<fvwm>. No command-line invocation is
+possible.
+
+=head1 DESCRIPTION
+
+B<PerlTkWL> is a sample application distributed with the B<X11::Fvwm>
+extension to Perl 5. It mimics the well-known I<FvwmWinList> module, adding
+some notable new features.
+
+In addition to the typical behavior supported by I<FvwmWinList>, this
+application offers the following:
+
+=over 4
+
+=item *
+
+Choice of traditional "text" display or a graphics-based display that uses
+a small image to indicate which windows are currently iconified.
+
+=item *
+
+Optional use of mini-icons in the graphics mode, to further identify
+various windows.
+
+=item *
+
+Configurable sorting style for ordering the windows within the list.
+
+=item *
+
+Selectable anchor for the application with respect to the desktop.
+
+=back
+
+Almost all of the options offered by I<FvwmWinList> are supported, with the
+exception of selecting left or right name truncation, and a difference in
+that window maximum width is controlled by number of printable characters in
+the name, rather than an explicit window width.
+
+=head1 INITIALIZATION
+
+When run, B<PerlTkWL> reads the configuration lines specified in the
+configuration file I<fvwm> itself used. It specifically looks for options
+whose names begin with the name of the application. You can link B<PerlTkWL>
+under additional names to specify different sets of options.
+
+=head1 INVOCATION
+
+B<PerlTkWL> can be invoked by fvwm during initialization by inserting
+the line 'Module PerlTkWL' in the .fvwmrc (or .fvwm2rc) file.
+
+B<PerlTkWL> can also be bound to any event specifier
+option to be invoked later, in this case using 'Transient' as an
+argument will cause B<PerlTkWL> to resemble the built-in window list.
+
+B<PerlTkWL> must reside in a directory that is listed in the
+I<ModulePath> option of Fvwm for it to be executed by Fvwm.
+
+=head1 CONFIGURATION OPTIONS
+
+B<PerlTkWL> recognizes the following list of options. Note that the leading
+part of the name is based on the application name. Were the user to make a
+link to B<PerlTkWL> under the name I<TransientWL> (for calling as a transient
+application), then you would replace C<PerlTkWL> with C<TransientWL> in all
+the names below:
+
+=over
+
+=item *PerlTkWLFont
+
+Define the font to use for text in the button for each window.
+
+=item *PerlTkWLForeground
+
+=item *PerlTkWLBackground
+
+General foreground and background colors for windows.
+
+=item *PerlTkWLActiveForeground
+
+=item *PerlTkWLActiveBackground
+
+Foreground and background colors used only in "text" mode, to indicate
+which button the mouse is currently over. Not used in graphic mode because
+of the additional color use in the icons.
+
+=item *PerlTkWLFocusForeground
+
+=item *PerlTkWLFocusBackground
+
+Foreground and background colors given to a button when the window associated
+with that button has the focus.
+
+=item *PerlTkWLIconForeground
+
+=item *PerlTkWLIconBackground
+
+Foreground and background colors given to a button when the window associated
+with that button is iconified. Used in both text and graphic styles.
+
+=item *PerlTkWLAction
+
+Associates an action (or list of actions) to be executed when a mouse event
+occurs on the button. The currently supported list of action are C<Click1>,
+C<Click2> and C<Click3>. The defaults are "Focus,Iconify -1,Focus" for
+C<Click1>, "Iconify 1" for C<Click2> and "Nop" for C<Click3>. The actions
+are taken from the various commands available from fvwm, documented in that
+manual page (see L<fvwm>). Multiple commands can be specified as a
+comma-separated list.
+
+=item *PerlTkWLAnchor
+
+Specify how the application should be anchored, which affects the directions
+in which it will grow when growth is needed (and will affect shrinking as
+well). Defaults to "nw", meaning that the window will grow downward and to
+the right, and will shrink upward and to the left.
+
+=item *PerlTkWLSortStyle
+
+Define the criteria by which the list is sorted. This may include any
+subset of C<alpha>, C<iconfirst>, C<iconlast> and C<reverse>. C<iconfirst>
+and C<iconlast> are mutually-exclusive; using both may give unpredictable
+results. If C<alpha> is specified, the list is sorted alphabetically by
+window name (windows that are iconified are still sorted by their window
+name, so may appear to be out of the alphabetic ordering). If either of
+C<iconfirst> or C<iconlast> are specified, then icons are grouped separately
+from non-iconified windows, each group is separately sorted, then the two
+group are displayed one following the other, depending on whether I<first>
+or I<last> was specified. Lastly, if the qualifier C<reverse> is given, then
+the sorts are done in descending order (though this does not invert the
+functionality of C<iconfirst> or C<iconlast>). The default is C<alpha>.
+
+=item *PerlTkWLStyle
+
+Choose the display style. May be one of C<text> or C<graphic>. The C<text>
+style is the familiar one, in which the window name and its geometry are
+centered within the button, and iconified windows are indicated by enclosing
+that string within parentheses. The graphic style places the window name
+left-justified and the geometry right-justified. It indicates iconified
+windows by a cloverleaf icon to the right of the geometry. If the user
+enables mini-icons, then if a specified mini-icon matches for the window it
+is displayed to the left of the name. The default is C<text>.
+
+=item *PerlTkWLUseSkipList
+
+Whether or not to honor the I<SkipWindowList> property of windows that have
+it set. The default is to do so, and windows with that property set do not
+appear in the listing. The specification for this can be any of C<yes>,
+C<no>, C<true>, C<false>, C<1> or C<0>.
+
+=item *PerlTkWLUseMiniIcons
+
+Whether or not to use mini-icons to the left of windows. Uses the same
+format as above, and defaults to C<no>.
+
+=item *PerlTkWLMiniIcon
+
+Specify a mapping of an icon image file to an application by name, resource
+name or resource class. Each mapping is of the form "Name file", and multiple
+mappings may be on the same line if separated by commas. As many lines of
+this form as needed may be specified. The icon files are searched for in the
+same paths as others are, the values of I<IconPath> and I<PixmapPath>.
+Specifying any number of these lines does I<not> atuomatically set
+B<PerlTkWLUseMiniIcons> to true. It must still be explicitly set for mini-icons
+to be used at all.
+
+=back
+
+=head1 SAMPLE CONFIGURATION
+
+Here is a sample configuration, used by the author and annotated here for
+clarity:
+
+    # Options to PerlTkWL module
+    # Set up the font to use and the colors
+    *PerlTkWLFont                   6x10
+    *PerlTkWLForeground             gray30
+    *PerlTkWLBackground             AntiqueWhite
+    *PerlTkWLActiveForeground       AntiqueWhite
+    *PerlTkWLActiveBackground       gray30
+    *PerlTkWLFocusForeground        Gold1
+    *PerlTkWLFocusBackground        NavyBlue
+    *PerlTkWLIconForeground         black
+    *PerlTkWLIconBackground         #e2beaf
+    # Actions to be taken by the buttons
+    *PerlTkWLAction                 Click1 Focus,Iconify -1,Focus
+    *PerlTkWLAction                 Click2 Iconify 1
+    *PerlTkWLAction                 Click3 Module "FvwmIdent" FvwmIdent
+    # Where the anchor point should be
+    *PerlTkWLAnchor                 se
+    # Old-style 'text' mode or use graphics?
+    *PerlTkWLStyle                  graphic
+    # How should the list be sorted?
+    *PerlTkWLSortStyle              alpha
+    # Abuse graphics even further with mini-icons?
+    *PerlTkWLUseMiniIcons           yes
+    # Define the specifier-icon mappings for any apps we wish highlighted
+    *PerlTkWLMiniIcon               tkInfo jbook1.xpm,TkMan mini.xman.xpm
+    *PerlTkWLMiniIcon               Netscape mini.netscape.xpm
+    *PerlTkWLMiniIcon               lrom mini.lrom.xpm
+    *PerlTkWLMiniIcon               xmag jmag.xpm,xpaint jpaint.xpm
+    *PerlTkWLMiniIcon               TkMail jmail.xpm,elm jmail.xpm
+    *PerlTkWLMiniIcon               FvwmPager mini.fvwm.xpm
+    *PerlTkWLMiniIcon               xload jgraph.xpm
+    *PerlTkWLMiniIcon               XTerm mini.xterm.xpm,wabi win.xpm
+    *PerlTkWLMiniIcon               hpcalc jcalc.xpm,Canvas jpaint.xpm
+    *PerlTkWLMiniIcon               ptkmines mine.xpm
+
+=head1 CAVEATS
+
+B<PerlTkWL> is meant primary as an example of coding with the B<X11::Fvwm>
+(see L<X11::Fvwm>) module and the Tk module. While it can be useful, it is
+not supported to the degree that the Fvwm module itself is.
+
+It is also coded for clarity at the expense of efficiency.
+
+=head1 COPYRIGHT
+
+B<PerlTkWL> is copyright (c) 1997 by the author, all rights reserved. It
+may be copied and distributed under the same terms as the B<X11::Fvwm>
+module itself. See the I<README> file that was packaged with the distribution.
+
+=head1 AUTHOR
+
+Randy J. Ray <randy@byz.org>

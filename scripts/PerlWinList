@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+
+# PerlWinList - small, instructive example of a fvwm module implemented
+# in Perl 5.
+# Based on code (c)1996 Dan Astoorian <djast@utopia.csas.com>
+
+# Note: This requires X11::Fvwm installed in your @INC path:
+use strict;
+use X11::Fvwm qw(M_WINDOW_NAME M_END_WINDOWLIST);
+use IO::File;
+
+my $fh = new IO::File "> /dev/console";
+
+my $module = new X11::Fvwm;
+
+$module->initModule(M_WINDOW_NAME | M_END_WINDOWLIST);
+
+# Register the event handlers
+$module->addHandler(M_WINDOW_NAME,
+		    sub {
+			my ($type, $id, $frameid, $ptr, $name) = @_;
+			printf $fh ("Window ID  %8lx: %s\n", $id, $name);
+			# return 1, to signal the event loop to continue
+			1;
+		    });
+# This one returns 0 to signal that it terminates the module.
+$module->addHandler(M_END_WINDOWLIST,
+		    sub { print $fh "---end of window list\n"; return 0; });
+
+print $fh "---start of window list\n";
+# Ask FVWM to send us its list of windows
+$module->sendInfo(0, "Send_WindowList");
+
+# Enter the main loop
+$module->eventLoop;
+
+# We're done; clean up.
+$module->endModule;
+
+exit;

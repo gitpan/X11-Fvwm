@@ -1,0 +1,19 @@
+$Id: ToDo,v 1.3 1997/03/19 22:53:56 rjray Exp $
+
+* Three packet types are still undocumented, and thus not really supported.
+  In addition, two (M_ICON_FILE and M_DEFAULTICON) I was just guessing at
+  to begin with.
+
+* Need more example scripts. Maybe even a separate document that better
+  explains the Fine Art of writing packet handlers. Or even a better
+  document on the module API. But then we get into stuff that needs to be
+  with Fvwm itself.
+
+* Some default routines in their own pm module would be good, such as a
+  catcher for M_ERROR under Tk, etc.
+
+* Get delivery of scripts into a configurable module path, currently go to
+  /usr/local/lib/X11/fvwm2.
+
+* Sample modules need to be PL files, to get perl paths from configuration,
+  and not hard-coded.
