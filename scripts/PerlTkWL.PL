@@ -35,6 +35,8 @@ $Config{'startperl'}
 
 print OUT <<'!NO!SUBS!';
     eval 'exec perl -S $0 "$@"'
+	if 0;
+    eval 'exec perl -S $0 "$@"'
         if 0;
 
 #
@@ -265,10 +267,10 @@ sub ReadFvwmOptions
     my $top = shift;
 
     # Without any arguments, this method will return a hash populated only
-    # with keys that contain our app name as a substring. The *trimname
+    # with keys that contain our app name as a substring. The -trimname
     # argument doesn't count-- getConfigInfo will pull it out early, and use
     # it as a direction to strip the "PerlTkWL" part of the name from each key.
-    %OPTS = $mod->getConfigInfo('*trimname');
+    %OPTS = $mod->getConfigInfo(-trimname);
 
     # Just go down the list looking for things or setting defaults.
     $OPTS{fg}   = $OPTS{Foreground} || 'black';

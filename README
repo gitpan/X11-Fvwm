@@ -1,13 +1,15 @@
-X11::Fvwm version 0.2 (alpha 2)
+X11::Fvwm version 0.3 (beta 1)
 
 WHAT IS IT?
 
 This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
-only in Perl 5, but with the Tk extension as your GUI library!
+only in Perl 5, but with either the Tk extension or the Xforms library as
+your GUI choices!
 
-This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is very
-highly recommended that you also install the latest version of Tk (which is
-Tk400.202 as of this writing), also available from CPAN.
+This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is
+very highly recommended that you also install the latest version of Tk
+(which is Tk400.202 as of this writing) or X11::Xforms (0.7 or better),
+also available from CPAN.
 
 WHAT DOES IT DO?
 
@@ -27,7 +29,7 @@ INSTALLATION
 The package should be uncompressed using the GNU zip utility. Once done and
 you have cd'd down to the directory:
 
-	gzcat X11-Fvwm.tar.gz | tar xf -
+	gzcat X11-Fvwm-0.3.tar.gz | tar xf -
 	cd X11/Fvwm
 
 you will need to create the Makefile and verify that your package is

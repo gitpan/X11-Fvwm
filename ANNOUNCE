@@ -1,25 +1,28 @@
 Fri Mar 28 18:24:21 MST 1997
 
-Version 0.2 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
+Version 0.3 of X11::Fvwm has been uploaded to PAUSE, and should propagate to
 CPAN servers over the next few days.
 
-This is the second alpha release. Not all planned features are in, not all
+This is the first beta release. Not all planned features are in, not all
 data packet types are yet correctly identified and dissected. The interface
-style and overall functionality are still subject to drastic change before
-this moves into beta. Changes in this version are list below.
+style and overall functionality are now fairly stable, and drastic changes
+should be minimal from this point on. Changes in this version are listed below.
+There are not a lot of changes, as 0.2 was pretty clean.
 
-From the README file for 0.2:
+From the README file for 0.3:
 
-X11::Fvwm version 0.2 (alpha 2)
+X11::Fvwm version 0.3 (beta 1)
 
 WHAT IS IT?
 
 This is a Perl 5 extension to simplify writing Fvwm2 modules in Perl 5. Not
-only in Perl 5, but with the Tk extension as your GUI library!
+only in Perl 5, but with either the Tk extension or the Xforms library as
+your GUI choices!
 
-This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is very
-highly recommended that you also install the latest version of Tk (which is
-Tk400.202 as of this writing), also available from CPAN.
+This requires fvwm 2.0.45 or better, and perl 5.002 or better. It is
+very highly recommended that you also install the latest version of Tk
+(which is Tk400.202 as of this writing) or X11::Xforms (0.7 or better),
+also available from CPAN.
 
 WHAT DOES IT DO?
 
@@ -47,27 +50,19 @@ distributed under terms of the Artistic License used to cover Perl itself.
 See the file Artistic in the distribution of Perl 5.002 or later for details
 of copy and distribution terms. All rights reserved.
 
-From the Changes file for 0.2:
+From the Changes file for 0.3:
 
-* Changed the invocation of handlers to include a reference to the X11::Fvwm
-  object as the first parameter. Otherwise, handlers have no access to the
-  object unless the object is global or the handler is created as a closure.
+* Only major change: The use of asterisk (*) to specify directives to the
+  getConfigInfo method has been deprecated in favor of the dash (-). You will
+  currently be warned when getConfigInfo encounters the old style, but the
+  first official release (whenever I reach a stable 1.0) will remove this
+  entirely.
 
-* Removed the Tk references in Fvwm.pm, so that X11::Fvwm acts as a base
-  class for the API. Fvwm/Tk.pm (X11::Fvwm::Tk) now is a subclass of X11::Fvwm
-  with the new() and eventLoop() methods overloaded. Also adds one new
-  instance variable and a method to access it by. This should simplify adding
-  other GUI widget sets, such as Xforms.
+* Tentative support of X11::Xforms (version 0.7 or later) added.
 
-* Put in some simple default handlers in Fvwm/Defaults.pm (package
-  X11::Fvwm::Defaults), that can be used if they meet the developer's needs.
-  So far, only M_ERROR seems to lend itself to such a default handling.
+* More demo scripts added.
 
-* X11::Fvwm, X11::Fvwm::Tk, X11::Fvwm::Defaults and PerlTkWL are all -w and -T
-  clean.
+* Some minor cleanup here and there. Little of this, as 0.2 was pretty stable.
 
-* Makefile.PL now handles the demos as *.PL files, which allows them to be
-  extracted by perl itself, which results in an invocation line based on
-  the user's configuration of perl.  Also checks for a usable version of
-  the Tk extension.
+* All *.pm have documentation (though some demos still need it).
 

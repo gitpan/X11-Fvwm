@@ -37,7 +37,6 @@
 #                   addHandler
 #                   deleteHandler
 #                   clearAllHandlers
-#                   ListHandlers
 #                   setOptions
 #                   GetConfigInfo
 #
@@ -45,7 +44,7 @@
 
 package X11::Fvwm;
 
-use 5.002;
+require 5.002;
 
 use strict;
 use Carp;
@@ -147,8 +146,8 @@ use IO::File;
              START_FLAG
             );
 
-$VERSION = '0.2';
-$revision = sprintf("%d.%02d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/o);
+$VERSION = '0.3';
+$revision = sprintf("%d.%02d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/o);
 
 #
 # This AUTOLOAD is intended to facilitate the loading of constants from the XS
@@ -203,9 +202,9 @@ $X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
 %X11::Fvwm::packetTypes = (
                            &M_NEW_PAGE,          "l5",
                            &M_NEW_DESK,          "l",
+
                            &M_ADD_WINDOW,        "l24",
                            &M_CONFIGURE_WINDOW,  "l24",
-
                            &M_LOWER_WINDOW,      "l3",
                            &M_RAISE_WINDOW,      "l3",
                            &M_DESTROY_WINDOW,    "l3",
@@ -216,15 +215,13 @@ $X11::Fvwm::varTypes = &M_WINDOW_NAME | &M_ICON_NAME | &M_RES_CLASS |
                            &M_ICON_LOCATION,     "l7",
                            &M_DEICONIFY,         "l3",
                            &M_MAP,               "l3",
-
                            &M_WINDOW_NAME,       "l3a*",
                            &M_ICON_NAME,         "l3a*",
                            &M_RES_CLASS,         "l3a*",
                            &M_RES_NAME,          "l3a*",
                            &M_ICON_FILE,         "l3a*",
                            &M_DEFAULTICON,       "l3a*",
-
-			   &M_MINI_ICON,         "l6",
+                           &M_MINI_ICON,         "l6",
 
                            &M_END_WINDOWLIST,    "",
                            &M_ERROR,             "l3a*",
@@ -401,9 +398,6 @@ sub initModule
     $self->{OFD}->autoflush(1);
     $self->{IFD}->autoflush(1);
 
-    $self->{selectMask} = 0;
-    vec($self->{selectMask}, fileno($self->{IFD}), 1) = 1;
-
     $self->{handlerTable} = {};
     $self->{sentEndPkt} = 0;
     $self->{didInit} = 1;
@@ -486,15 +480,8 @@ sub readPacket
 
     $self->initModule unless ($self->{didInit});
 
-    #
-    # We first do a quick check for whether our output-fd is dead, which
-    # would mean that fvwm has gone away, for whatever reason.
-    #
-    #return (-1) if ($self->{IFD}->eof);
-
     # header is sizeof(int) * HEADER_SIZE bytes long:
     $got = sysread($self->{IFD}, $header, $self->{intsize} * &HEADER_SIZE);
-    #croak "$self->{NAME}: sysread error: $!\n"
     return -1
         unless (defined $got and $got == ($self->{intsize} * &HEADER_SIZE));
 
@@ -781,7 +768,7 @@ sub deleteHandler
 #   Arguments:      NAME      IN/OUT  TYPE      DESCRIPTION
 #                   $self     in      ref       Object of this class
 #
-#   Returns:        Success:    1
+#   Returns:        Success:    ref to new hash
 #                   Failure:    dies
 #
 ##############################################################################
@@ -790,8 +777,6 @@ sub clearAllHandlers
     my $self = shift;
 
     $self->{handlerTable} = {};
-
-    1;
 }
 
 ##############################################################################
@@ -928,10 +913,42 @@ sub getConfigInfo
 
     my ($name, $value, @args, $len, $packet, $type, %hash, %params);
 
-    map { $params{$_}++ if /^\*/o } @keys;
+    $self->{DEBUG} && print STDERR ">>> Entering getConfigInfo\n";
+
+    #
+    # Turn the "keys" whose first character is - into a referrable hash table
+    # that we'll test later on. Then remove any of these from the @keys list.
+    #
+    for (@keys) { $params{lc $1}++ if /^-(\w+)/o }
+    @keys = grep(! /^-/, @keys);
+
+    #
+    # NOTICE: This will be deprecated sometime around the first official
+    #         release. It is being marked as deprecated for now, to give people
+    #         time to change.
+    #
+    for (@keys)
+    {
+        if (/^\*(\w+)/o)
+        {
+            $params{lc $1}++;
+            warn "Use of * to specify options to getConfigInfo deprecated. " .
+                "Use -$1 instead.\n";
+        }
+    }
     @keys = grep(! /^\*/, @keys);
 
-    if ((! $self->{modOptionRead}) || (exists $params{'*refresh'}))
+    if ($self->{DEBUG})
+    {
+        print STDERR "getConfigInfo options: ",
+            join(' ', (sort keys %params)), "\n"
+                if ((scalar keys %params) != 0);
+        print STDERR "selection key(s) specified: ", join(' ', (sort @keys)),
+            "\n"
+                if (scalar @keys != 0);
+    }
+
+    if ((! $self->{modOptionRead}) || (exists $params{refresh}))
     {
         #
         # We need to either read the info or update it.
@@ -984,7 +1001,7 @@ sub getConfigInfo
 
     %hash = ();
 
-    if (exists $params{'*all'})
+    if (exists $params{all})
     {
         %hash = %{$self->{modOption}};
     }
@@ -1008,15 +1025,40 @@ sub getConfigInfo
     #
     # Did they request that the NAME portion be trimmed from hash keys?
     #
-    if (exists $params{'*trimname'})
+    if (exists $params{trimname})
     {
+        my $name = $self->{NAME};
+        my @namparam;
+        if (@namparam = grep(/^name=/oi, keys %params))
+        {
+            $namparam[0] =~ /^name=(.*)$/oi;
+            $self->{DEBUG} &&
+                print STDERR "Getting params for $1 rather than $name\n";
+            $name = $1;
+        }
+
         for my $key (keys %hash)
         {
-            next unless ($key =~ /^$self->{NAME}(.*)/);
+            next unless ($key =~ /^\Q$name\E(.*)/);
             $hash{$1} = $hash{$key};
             delete $hash{$key};
         }
     }
+
+    #
+    # Did they ask for case-insensitivity?
+    #
+    if (exists $params{nocase})
+    {
+        for my $key (keys %hash)
+        {
+            next if ($key eq lc $key);
+            $hash{lc $key} = $hash{$key};
+            delete $hash{$key};
+        }
+    }
+
+    $self->{DEBUG} && print STDERR "<<< Leaving getConfigInfo\n";
 
     %hash;
 }
@@ -1033,7 +1075,7 @@ X11::Fvwm - Perl extension for the Fvwm2 X11 Window Manager
 
     $handle->initModule;
 
-    $handle->addHandler(M_CONFIGURE_WINDOW, \&configure_Toplevel);
+    $handle->addHandler(M_CONFIGURE_WINDOW, \&configure_a_window);
     $handle->addHandler(M_CONFIG_INFO, \&some_other_sub);
 
     $handle->eventLoop;
@@ -1360,14 +1402,14 @@ here.
 %hash = $self->getConfigInfo(@keys)
 
 Fetch information from the running I<Fvwm> process through the configuration
-interface. Configuration lines are those lines in the configuration file that
-start with a leading B<*> character. The first time this method is called, the
-module fetches all configuration information, discarding the leading asterisk
-from the names. Specific values may be requested, or the entire contents
-fetched. A module has access to all configuration data, not just the lines
-that match the name of the program. The return value is a hash table whose
-keys are the name part of the configuration lines (sans asterisk) and whose
-values are the contents of the lines.
+interface. Configuration lines are those lines in the configuration file
+that start with a leading B<*> character. The first time this method is
+called, the module fetches all configuration information, discarding the
+leading asterisk from the names. Specific values may be requested, or the
+entire contents fetched. A module has access to all configuration data,
+not just the lines that match the name of the program. The return value
+is a hash table whose keys are the name part of the configuration lines
+(sans asterisk) and whose values are the contents of the lines.
 
 In addition to the configuration lines, I<Fvwm> also sends the following
 parameters: C<IconPath>, C<PixmapPath>, C<ColorLimit> and C<ClickTime>.
@@ -1376,13 +1418,13 @@ These are also retrievable by those names.
 The values in the optional arguments C<@keys> can be a specific name to look
 up (or names), or any of the following special directives:
 
-B<*refresh> forces B<getConfigInfo> to re-read the data from I<Fvwm>.
+B<-refresh> forces B<getConfigInfo> to re-read the data from I<Fvwm>.
 
-B<*all> causes the method to return the full configuration table, not just
+B<-all> causes the method to return the full configuration table, not just
 those names that contain the module name as a substring of the configuration
 item name (this value is taken from the B<NAME> instance variable).
 
-B<*trimname> instructs the method to excise the module name (the value of
+B<-trimname> instructs the method to excise the module name (the value of
 the B<NAME> instance variable) from any keys in the final return set that
 contain the name as a substring. As an example, a module named B<TkWinList>
 can get back names such as I<Foreground> rather than I<TkWinListForeground>.
@@ -1390,7 +1432,7 @@ Keys not containing the substring will not be affected.
 
 If any specific keys are requested in B<@args>, then the returned hash table
 only contains those keys which were in fact present in the internal table.
-B<*trimname> can still be used to remove the module name from the keys.
+B<-trimname> can still be used to remove the module name from the keys.
 
 If an option is intended to be lengthy and possibly span lines, multiple
 occurances of that configuration name can appear in the configuration file.
@@ -1400,6 +1442,11 @@ referred array are all the values from the series of lines.
 
 Again, the B<PerlTkWL> sample application utilizes these features, and may
 be referenced for further information.
+
+B<Note:> Alpha versions of this module used the asterisk (B<*>) to
+specify directives to getConfigInfo. That has been deprecated with the
+first beta release (0.3), and will be removed entirely in the first
+official release.
 
 =item eventLoop 
 
@@ -2059,6 +2106,16 @@ doing stupid things, as that would also keep you from doing clever things.
 What this means is that there are several areas with which you can hang your
 module or even royally confuse your running I<Fvwm> process. This is due to
 flexibility, not bugs.
+
+The B<ColorLimit> parameter that is fetched by getConfigInfo is only
+accessible if you have applied the color-limiting patch to Fvwm 2.0.45.
+The fate of that patch (and others) in future releases of Fvwm remains to
+be seen.
+
+The contents of the B<M_WINDOWSHADE> and B<M_DEWINDOWSHADE> packets is
+based on a patch submitted by the author. Without this patch, these packets
+only return one integer value, the X window ID of the window in question.
+Access to the frame ID or the database ID is dependant on this patch.
 
 =head1 AUTHOR
 

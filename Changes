@@ -30,3 +30,19 @@ Revision history for Perl extension X11::Fvwm.
   the user's configuration of perl.  Also checks for a usable version of
   the Tk extension.
 
+0.3  Wed Apr 30 13:41:51 MDT 1997
+	- first beta release
+
+* Only major change: The use of asterisk (*) to specify directives to the
+  getConfigInfo method has been deprecated in favor of the dash (-). You will
+  currently be warned when getConfigInfo encounters the old style, but the
+  first official release (whenever I reach a stable 1.0) will remove this
+  entirely.
+
+* Tentative support of X11::Xforms (version 0.7 or later) added.
+
+* More demo scripts added.
+
+* Some minor cleanup here and there. Little of this, as 0.2 was pretty stable.
+
+* All *.pm have documentation (though some demos still need it).

@@ -34,6 +34,8 @@ $Config{'startperl'}
 # In the following, perl variables are not expanded during extraction.
 
 print OUT <<'!NO!SUBS!';
+    eval 'exec perl -S $0 "$@"'
+	if 0;
 
 # PerlWinList - small, instructive example of a fvwm module implemented
 # in Perl 5.
@@ -73,6 +75,19 @@ $module->eventLoop;
 $module->endModule;
 
 exit;
+__END__
+
+=head1 NAME
+
+PerlWinList - Simple example of basic X11::Fvwm usage
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+=head1 AUTHOR
+
+=head1 SEE ALSO
 !NO!SUBS!
 
 close OUT or die "Can't close $file: $!";
